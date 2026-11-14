@@ -52,6 +52,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The vendored SDK's dist/ is gitignored and npm ci does not build it;
+      # compile it so tsc can resolve @vectorize-io/hindsight-client's types.
+      - run: npm run prebuild
       - run: npx tsc --noEmit
 
   test:
@@ -63,6 +66,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Build the vendored SDK so vitest can resolve its entry (dist/ is gitignored).
+      - run: npm run prebuild
       - run: npx vitest run
 
   build:
