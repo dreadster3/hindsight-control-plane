@@ -32,7 +32,7 @@
 # this file could not reach Docker Hub to resolve the digest. Pin
 # node:22-alpine@sha256:... here once resolved, matching the digest-pinning
 # convention of the sibling hindsight-hybrid-authentication repo.
-FROM node:22-alpine AS build
+FROM node:26.13.1-alpine3.24@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS build
 WORKDIR /app
 
 # Install first so source edits don't re-resolve dependencies. The vendored
@@ -46,7 +46,7 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM node:22-alpine AS runner
+FROM node:26.13.1-alpine3.24@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
