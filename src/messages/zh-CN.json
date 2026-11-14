@@ -61,7 +61,8 @@
       "viaAlias": "通过 {aliases}"
     },
     "viewOnGitHub": "在 GitHub 查看",
-    "more": "更多"
+    "more": "更多",
+    "logout": "退出登录"
   },
   "bank": {
     "bankConfiguration": "记忆库配置",

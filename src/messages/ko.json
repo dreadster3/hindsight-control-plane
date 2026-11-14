@@ -61,7 +61,8 @@
       "viaAlias": "{aliases} 경유"
     },
     "viewOnGitHub": "GitHub에서 보기",
-    "more": "더 보기"
+    "more": "더 보기",
+    "logout": "로그아웃"
   },
   "bank": {
     "bankConfiguration": "뱅크 구성",

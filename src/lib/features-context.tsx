@@ -10,6 +10,7 @@ interface Features {
   bank_config_api: boolean;
   bank_llm_health: boolean;
   access_key_auth: boolean;
+  oidc_auth: boolean;
   document_export_api: boolean;
   document_import_api: boolean;
   knowledge_banks: boolean;
@@ -31,6 +32,7 @@ const defaultFeatures: Features = {
   bank_config_api: false,
   bank_llm_health: false,
   access_key_auth: false,
+  oidc_auth: false,
   document_export_api: false,
   document_import_api: false,
   knowledge_banks: false,

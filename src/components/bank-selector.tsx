@@ -1017,12 +1017,12 @@ function BankSelectorInner({ kind = "memory", knowledgeBankId }: BankSelectorPro
                 ))}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
-            {features?.access_key_auth && (
+            {(features?.access_key_auth || features?.oidc_auth) && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout}>
                   <LogOut className="h-4 w-4 mr-2" />
-                  Logout
+                  {tNav("logout")}
                 </DropdownMenuItem>
               </>
             )}
@@ -1058,14 +1058,14 @@ function BankSelectorInner({ kind = "memory", knowledgeBankId }: BankSelectorPro
 
           <LanguageSwitcher />
 
-          {features?.access_key_auth && (
+          {(features?.access_key_auth || features?.oidc_auth) && (
             <>
               <div className="h-8 w-px bg-border" />
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-9 w-9"
-                title="Logout"
+                title={tNav("logout")}
                 onClick={logout}
               >
                 <LogOut className="h-5 w-5" />

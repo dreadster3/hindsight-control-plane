@@ -61,7 +61,8 @@
       "viaAlias": "{aliases} 経由"
     },
     "viewOnGitHub": "GitHubで表示",
-    "more": "その他"
+    "more": "その他",
+    "logout": "ログアウト"
   },
   "bank": {
     "bankConfiguration": "バンク設定",

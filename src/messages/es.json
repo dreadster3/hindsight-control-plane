@@ -61,7 +61,8 @@
       "viaAlias": "vía {aliases}"
     },
     "viewOnGitHub": "Ver en GitHub",
-    "more": "Más"
+    "more": "Más",
+    "logout": "Cerrar sesión"
   },
   "bank": {
     "bankConfiguration": "Configuración del banco",

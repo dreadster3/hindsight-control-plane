@@ -2205,6 +2205,8 @@ export class ControlPlaneClient {
         audit_log: boolean;
         llm_trace: boolean;
         store_document_text: boolean;
+        access_key_auth: boolean;
+        oidc_auth: boolean;
       };
     }>("/api/version");
   }
