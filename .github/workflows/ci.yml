@@ -1,0 +1,95 @@
+# CI for hindsight-control-plane.
+#
+# Mirrors the sibling hindsight-hybrid-authentication repo's CI shape: one check per job, all
+# starting at once (no `needs:`), each job id IS the check-run name branch protection points at.
+# The suite is offline: eslint, tsc, vitest (458 tests against mocks/stubs) and `next build` need
+# no secrets, no dataplane and no IdP — the OIDC and dataplane seams are mocked in tests.
+#
+# Every job runs `npm ci` from the committed lockfile; setup-node's built-in npm cache keeps that
+# cheap. `npm run build` also exercises the vendored SDK's prebuild (tsc + esbuild plugin), so a
+# broken vendor/hindsight-client fails CI, not the release.
+#
+# Pins: checkout@v7 and setup-node@v7 are node24 builds — Node 20 was removed from hosted runners,
+# so node20-based action majors no longer start. Same pins as the sibling repo where applicable.
+
+name: CI
+
+"on":
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Superseded runs are pointless: a new commit to the same ref cancels the previous run instead of
+# queueing behind it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@48b5dd612ef47e88aa4c345095f69523d225a52b # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Upstream carries ~294 pre-existing warnings; the gate is zero ERRORS (eslint exits 0).
+      - run: npm run lint
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@48b5dd612ef47e88aa4c345095f69523d225a52b # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@48b5dd612ef47e88aa4c345095f69523d225a52b # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@48b5dd612ef47e88aa4c345095f69523d225a52b # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # prebuild compiles vendor/hindsight-client, then next build produces the standalone output
+      # the Dockerfile ships.
+      - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  # Optional and non-required: builds deploy/Dockerfile so the image cannot silently rot. The
+  # container image is the release artifact, so it must always build — a Dockerfile that stopped
+  # building fails on the PR that broke it rather than after merge. Build only, not a start-up
+  # probe: a meaningful probe needs a dataplane and (in OIDC mode) an IdP, which CI does not have.
+  # No cross-run layer cache: a cache namespace shared with the release push is not worth the risk
+  # of poisoning the image that actually ships.
+  docker-build:
+    name: docker-build (non-required)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: docker build
+        run: docker build -f deploy/Dockerfile -t hindsight-control-plane:ci-${{ github.sha }} .

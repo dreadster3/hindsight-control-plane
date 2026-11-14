@@ -115,3 +115,28 @@ Vendored from the upstream monorepo so this repo stands alone:
   browser returns to the login page; transient IdP outages keep the session.
 - Keep the API's auth as the only gate — do not trust proxy-injected identity
   headers (see the hybrid-tenant extension's README).
+## Docker
+
+```bash
+docker build -f deploy/Dockerfile -t hindsight-control-plane:dev .
+docker run -p 9999:9999 --env-file .env hindsight-control-plane:dev
+```
+
+The image runs the Next.js standalone server as an unprivileged user on port
+9999. All configuration is runtime environment (the standalone server does not
+read `.env` files — pass them with `--env-file` or your orchestrator). Use
+`/api/version` for liveness/readiness probes; `/api/health` returns 503 in OIDC
+mode until a session exists. Run a single replica: the token-refresh lock is
+in-process (see the OIDC notes above).
+
+## Releases
+
+Releases are automated with [release-please](https://github.com/googleapis/release-please):
+merging conventional-commit PRs to `main` keeps a `chore(main): release X.Y.Z`
+PR up to date; merging that PR tags `vX.Y.Z` and, in the same workflow run,
+builds and pushes `ghcr.io/dreadster3/hindsight-control-plane` tagged `vX.Y.Z`,
+`vX.Y`, `vX` and `latest`. Because the repo squash-merges, the **PR title** is
+what feeds the changelog — keep it conventional (`feat: ...`, `fix: ...`).
+No PATs are involved; the default `GITHUB_TOKEN` does everything. The GHCR
+package is private on first push — make it public in the package settings if
+it should be pullable without auth.
