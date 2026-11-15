@@ -2,7 +2,44 @@ import { createRequire } from "node:module";
 
 import { describe, expect, it } from "vitest";
 
-const { resolveBindHost } = createRequire(import.meta.url)("../../bin/cli.js");
+const { resolveBindHost, resolveBindTarget } = createRequire(import.meta.url)("../../bin/cli.js");
+
+const IMAGE_ENV = { PORT: "9999", HOSTNAME: "0.0.0.0" };
+
+describe("cli resolveBindTarget", () => {
+  it("defaults to 9999 on 0.0.0.0 when nothing is set", () => {
+    expect(resolveBindTarget({})).toEqual({ port: 9999, hostname: "0.0.0.0" });
+  });
+
+  it("reads the bare PORT/HOSTNAME fallbacks", () => {
+    expect(resolveBindTarget({ PORT: "3000", HOSTNAME: "127.0.0.1" })).toEqual({
+      port: "3000",
+      hostname: "127.0.0.1",
+    });
+  });
+
+  it("falls through an empty HINDSIGHT_CP_PORT to the bare PORT", () => {
+    expect(resolveBindTarget({ HINDSIGHT_CP_PORT: "", PORT: "3000" }).port).toBe("3000");
+  });
+
+  it("lets HINDSIGHT_CP_* beat the bare names", () => {
+    expect(
+      resolveBindTarget({
+        ...IMAGE_ENV,
+        HINDSIGHT_CP_PORT: "3001",
+        HINDSIGHT_CP_HOSTNAME: "127.0.0.1",
+      })
+    ).toEqual({ port: "3001", hostname: "127.0.0.1" });
+  });
+
+  it("applies the loopback translation to an aliased hostname", () => {
+    const { hostname } = resolveBindTarget({ HINDSIGHT_CP_HOSTNAME: "::1" });
+    expect(resolveBindHost(hostname, undefined)).toEqual({
+      hostname: "localhost",
+      nodeOptions: "--dns-result-order=ipv6first",
+    });
+  });
+});
 
 describe("cli resolveBindHost (#1926)", () => {
   it("binds a loopback literal as localhost, keeping the requested family", () => {

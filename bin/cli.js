@@ -17,7 +17,17 @@ function resolveBindHost(hostname, nodeOptions) {
   };
 }
 
-module.exports = { resolveBindHost };
+// The documented names are HINDSIGHT_CP_*, but Next's standalone server only
+// reads bare PORT/HOSTNAME and the container image pre-sets both, so the aliases
+// must be resolved here and win over them.
+function resolveBindTarget(env) {
+  return {
+    port: env.HINDSIGHT_CP_PORT || env.PORT || 9999,
+    hostname: env.HINDSIGHT_CP_HOSTNAME || env.HOSTNAME || '0.0.0.0',
+  };
+}
+
+module.exports = { resolveBindHost, resolveBindTarget };
 
 if (require.main === module) {
   main();
@@ -27,8 +37,7 @@ function main() {
 const args = process.argv.slice(2);
 
 // Parse command line arguments
-let port = process.env.PORT || 9999;
-let hostname = process.env.HOSTNAME || '0.0.0.0';
+let { port, hostname } = resolveBindTarget(process.env);
 let apiUrl = process.env.HINDSIGHT_CP_DATAPLANE_API_URL;
 
 for (let i = 0; i < args.length; i++) {
@@ -45,29 +54,37 @@ Hindsight Control Plane
 Usage: hindsight-control-plane [options]
 
 Options:
-  -p, --port <port>       Port to listen on (default: 9999, env: PORT)
-  -H, --hostname <host>   Hostname to bind to (default: 0.0.0.0, env: HOSTNAME)
+  -p, --port <port>       Port to listen on (default: 9999, env: HINDSIGHT_CP_PORT)
+  -H, --hostname <host>   Hostname to bind to (default: 0.0.0.0, env: HINDSIGHT_CP_HOSTNAME)
   -a, --api-url <url>     Hindsight API URL (env: HINDSIGHT_CP_DATAPLANE_API_URL)
   -h, --help              Show this help message
 
 Environment Variables:
-  PORT                              Port to listen on
-  HOSTNAME                          Hostname to bind to
+  HINDSIGHT_CP_PORT                 Port to listen on (default: 9999)
+  HINDSIGHT_CP_HOSTNAME             Hostname to bind to (default: 0.0.0.0)
+  PORT                              Fallback port, only when HINDSIGHT_CP_PORT is unset
+  HOSTNAME                          Fallback hostname, only when HINDSIGHT_CP_HOSTNAME is unset
   HINDSIGHT_CP_DATAPLANE_API_URL    URL of the Hindsight API server
+
+Flags beat environment variables, HINDSIGHT_CP_* beat the bare fallbacks.
 `);
     process.exit(0);
   }
 }
 
-// Find the standalone server
-const standaloneDir = path.join(__dirname, '..', 'standalone');
-const serverPath = path.join(standaloneDir, 'server.js');
+// Find the standalone server: the published package keeps it in standalone/,
+// the container image lays it at the root with bin/ beside it.
+const serverPath = [
+  path.join(__dirname, '..', 'standalone', 'server.js'),
+  path.join(__dirname, '..', 'server.js'),
+].find((candidate) => fs.existsSync(candidate));
 
-if (!fs.existsSync(serverPath)) {
-  console.error('Error: Standalone server not found at', serverPath);
+if (!serverPath) {
+  console.error('Error: Standalone server not found next to', __dirname);
   console.error('This package may not have been built correctly.');
   process.exit(1);
 }
+const standaloneDir = path.dirname(serverPath);
 
 // Set up environment
 const bind = resolveBindHost(hostname, process.env.NODE_OPTIONS);
