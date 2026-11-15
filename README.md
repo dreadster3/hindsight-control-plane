@@ -127,7 +127,8 @@ Vendored from the upstream monorepo so this repo stands alone:
 ```bash
 docker build -f deploy/Dockerfile -t hindsight-control-plane:dev .
 docker run -p 9999:9999 --env-file .env hindsight-control-plane:dev
-# or bind another port/interfaces: `-p` must match HINDSIGHT_CP_PORT
+# or bind another port/interfaces: the `docker run -p` host:container
+# mapping must match HINDSIGHT_CP_PORT
 docker run -p 3001:3001 -e HINDSIGHT_CP_PORT=3001 \
   -e HINDSIGHT_CP_HOSTNAME=0.0.0.0 --env-file .env hindsight-control-plane:dev
 ```
@@ -135,11 +136,11 @@ docker run -p 3001:3001 -e HINDSIGHT_CP_PORT=3001 \
 The image runs the Next.js standalone server as an unprivileged user on port
 9999 (`EXPOSE 9999`); set `HINDSIGHT_CP_PORT`/`HINDSIGHT_CP_HOSTNAME` to move it
 — they beat the image's `PORT=9999`/`HOSTNAME=0.0.0.0`. All configuration is
-runtime environment (the standalone server does not
-read `.env` files — pass them with `--env-file` or your orchestrator). Use
-`/api/version` for liveness/readiness probes; `/api/health` returns 503 in OIDC
-mode until a session exists. Run a single replica: the token-refresh lock is
-in-process (see the OIDC notes above).
+runtime environment (the standalone server does not read `.env` files — pass
+them with `--env-file` or your orchestrator). Use `/api/version` for
+liveness/readiness probes; `/api/health` returns 503 in OIDC mode until a
+session exists. Run a single replica: the token-refresh lock is in-process (see
+the OIDC notes above).
 
 ## Releases
 

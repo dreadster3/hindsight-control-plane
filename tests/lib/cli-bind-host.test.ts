@@ -18,6 +18,10 @@ describe("cli resolveBindTarget", () => {
     });
   });
 
+  it("falls through an empty HINDSIGHT_CP_PORT to the bare PORT", () => {
+    expect(resolveBindTarget({ HINDSIGHT_CP_PORT: "", PORT: "3000" }).port).toBe("3000");
+  });
+
   it("lets HINDSIGHT_CP_* beat the bare names", () => {
     expect(
       resolveBindTarget({
