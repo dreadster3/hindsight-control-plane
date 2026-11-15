@@ -8,9 +8,8 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
 
 // Use a port-scoped distDir so multiple dev instances don't collide on the lock file
-const distDir = process.env.PORT && process.env.PORT !== '9999'
-  ? `.next-${process.env.PORT}`
-  : '.next';
+const effectivePort = process.env.HINDSIGHT_CP_PORT || process.env.PORT;
+const distDir = effectivePort && effectivePort !== '9999' ? `.next-${effectivePort}` : '.next';
 
 // Maximum request body size (see src/lib/upload-limit.ts): Next.js truncates a longer body
 // that passes through middleware (default 10MB), so the middleware refuses one with a 413.

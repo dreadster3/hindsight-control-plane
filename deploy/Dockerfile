@@ -28,6 +28,11 @@
 # Probes: use /api/version (always 200) for liveness/readiness — /api/health
 # deliberately returns 503 in OIDC mode until a session exists.
 #
+# Bind address: HINDSIGHT_CP_PORT / HINDSIGHT_CP_HOSTNAME win over the PORT /
+# HOSTNAME ENV below (runtime -e values included), so
+#   docker run -p 3001:3001 -e HINDSIGHT_CP_PORT=3001 ...
+# listens on 3001 despite the image's PORT=9999.
+#
 # Base image pinned by tag, not digest: the build environment that authored
 # this file could not reach Docker Hub to resolve the digest. Pin
 # node:22-alpine@sha256:... here once resolved, matching the digest-pinning
@@ -57,7 +62,10 @@ ENV NODE_ENV=production \
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
+# bin/cli.js resolves HINDSIGHT_CP_PORT/HOSTNAME (which beat the PORT/HOSTNAME
+# ENV above) and hands the result to server.js.
+COPY --from=build --chown=node:node /app/bin ./bin
 USER node
 
 EXPOSE 9999
-CMD ["node", "server.js"]
+CMD ["node", "bin/cli.js"]
