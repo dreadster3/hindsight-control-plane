@@ -17,6 +17,7 @@ import {
   type ComposeMode,
   type ComposerBlock,
 } from "@/components/content-composer";
+import { GitHubIcon } from "@/components/github-icon";
 
 import { LanguageSwitcher, useSwitchLocale } from "@/components/language-switcher";
 import { SidebarMenuButton } from "@/components/sidebar";
@@ -63,7 +64,6 @@ import {
   FileText,
   Moon,
   Sun,
-  Github,
   Upload,
   X,
   Lock,
@@ -988,7 +988,7 @@ function BankSelectorInner({ kind = "memory", knowledgeBankId }: BankSelectorPro
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <Github className="h-4 w-4 mr-2" />
+                <GitHubIcon className="h-4 w-4 mr-2" />
                 GitHub
               </a>
             </DropdownMenuItem>
@@ -1038,7 +1038,7 @@ function BankSelectorInner({ kind = "memory", knowledgeBankId }: BankSelectorPro
             className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
             title={tNav("viewOnGitHub")}
           >
-            <Github className="h-5 w-5" />
+            <GitHubIcon className="h-5 w-5" />
             <span className="text-sm font-medium">GitHub</span>
           </a>
 
@@ -1815,7 +1815,7 @@ export function BankSelector(props: BankSelectorProps = {}) {
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-accent transition-colors text-muted-foreground"
               >
-                <Github className="h-5 w-5" />
+                <GitHubIcon className="h-5 w-5" />
                 <span className="text-sm font-medium">GitHub</span>
               </a>
               <div className="h-8 w-px bg-border" />
