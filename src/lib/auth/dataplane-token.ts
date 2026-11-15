@@ -185,6 +185,25 @@ async function clearSessionCookie(request: NextRequest, cookieName: string): Pro
 }
 
 /**
+ * Best-effort clear. The jar can throw outside a mutable-cookie context; that
+ * must not reject the shared refresh promise (see the unhandled rejection at
+ * `void pending.finally(...)`), so it is logged and swallowed.
+ */
+async function clearSessionCookieSafely(
+  request: NextRequest,
+  cookieName: string
+): Promise<void> {
+  try {
+    await clearSessionCookie(request, cookieName);
+  } catch (err) {
+    console.error(
+      "[Control Plane] OIDC session cookie clear failed:",
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+}
+
+/**
  * The bearer token for a dataplane request, or null when there is none.
  * In OIDC mode null means "no valid session": a failed refresh clears the
  * session cookie, so the next request is refused by the proxy's
@@ -207,7 +226,12 @@ export async function dataplaneToken(request: NextRequest): Promise<string | nul
     // Not decryptable with our secret (forged, or from another deployment).
     return null;
   }
-  if (!jwt?.access_token) return null;
+  if (!jwt?.access_token) {
+    // Decodes, but carries no token: the proxy still accepts this session, so
+    // leaving it set means every dataplane call 401s with no way to log out.
+    await clearSessionCookieSafely(request, cookieName);
+    return null;
+  }
 
   const now = Math.floor(Date.now() / 1000);
   if (!jwt.expires_at || jwt.expires_at - now > REFRESH_MARGIN_SECONDS) {
@@ -250,7 +274,7 @@ export async function dataplaneToken(request: NextRequest): Promise<string | nul
       // re-logins, instead of passing the gate for 30 days while every
       // dataplane call 401s. Only successes are cached, so a later request
       // retries the IdP rather than replaying this failure.
-      await clearSessionCookie(request, cookieName);
+      await clearSessionCookieSafely(request, cookieName);
       return null;
     })();
     refreshLocks.set(raw, pending);

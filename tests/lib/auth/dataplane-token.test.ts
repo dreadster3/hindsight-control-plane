@@ -231,6 +231,19 @@ describe("dataplaneToken — OIDC mode", () => {
     expect(jar.delete).toHaveBeenCalledWith(COOKIE);
   });
 
+  it("clears the session when the decoded JWT has no access token", async () => {
+    mockFetch([]);
+    const { dataplaneToken } = await loadHelper();
+    const cookie = await sessionCookie({
+      sub: "alice",
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+    });
+    expect(await dataplaneToken(requestWithCookie(cookie))).toBeNull();
+    // The cookie decodes fine, so the proxy still lets it through: leaving it
+    // set means a permanent unauthenticated 401 storm with no logout.
+    expect(jar.delete).toHaveBeenCalledWith(COOKIE);
+  });
+
   it("ignores a cookie encrypted with a different secret", async () => {
     mockFetch([]);
     const { dataplaneToken } = await loadHelper();
@@ -342,6 +355,25 @@ describe("dataplaneToken — refresh rotation edge cases", () => {
     // Dead session: cookie cleared so the next request gets a session-required
     // 401 and the UI re-logins instead of being locked out for 30 days.
     expect(jar.delete).toHaveBeenCalledWith(COOKIE);
+  });
+
+  it("still resolves null when clearing the dead session cookie throws", async () => {
+    mockFetch([
+      discovery,
+      { url: `${ISSUER}/token/`, status: 400, body: { error: "invalid_grant" } },
+    ]);
+    const { dataplaneToken } = await loadHelper();
+    const cookie = await expiredCookie();
+    // A jar failure must not reject the promise shared by concurrent requests
+    // (they would 500) and must not surface as an unhandled rejection.
+    jar.delete.mockImplementation(() => {
+      throw new Error("cookie jar unavailable");
+    });
+    try {
+      await expect(dataplaneToken(requestWithCookie(cookie))).resolves.toBeNull();
+    } finally {
+      jar.delete.mockReset();
+    }
   });
 
   it("clears the session on a transient IdP outage too", async () => {
