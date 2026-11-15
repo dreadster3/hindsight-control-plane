@@ -231,6 +231,19 @@ describe("dataplaneToken — OIDC mode", () => {
     expect(jar.delete).toHaveBeenCalledWith(COOKIE);
   });
 
+  it("clears the session when the decoded JWT has no access token", async () => {
+    mockFetch([]);
+    const { dataplaneToken } = await loadHelper();
+    const cookie = await sessionCookie({
+      sub: "alice",
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+    });
+    expect(await dataplaneToken(requestWithCookie(cookie))).toBeNull();
+    // The cookie decodes fine, so the proxy still lets it through: leaving it
+    // set means a permanent unauthenticated 401 storm with no logout.
+    expect(jar.delete).toHaveBeenCalledWith(COOKIE);
+  });
+
   it("ignores a cookie encrypted with a different secret", async () => {
     mockFetch([]);
     const { dataplaneToken } = await loadHelper();
@@ -331,7 +344,7 @@ describe("dataplaneToken — refresh rotation edge cases", () => {
   });
 
   it("clears the session when the IdP rejects the refresh token (invalid_grant)", async () => {
-    const calls = mockFetch([
+    mockFetch([
       discovery,
       { url: `${ISSUER}/token/`, status: 400, body: { error: "invalid_grant" } },
     ]);
@@ -342,17 +355,66 @@ describe("dataplaneToken — refresh rotation edge cases", () => {
     // Dead session: cookie cleared so the next request gets a session-required
     // 401 and the UI re-logins instead of being locked out for 30 days.
     expect(jar.delete).toHaveBeenCalledWith(COOKIE);
-    // The failure is cached briefly: no hammering the IdP with the dead token.
-    expect(await dataplaneToken(requestWithCookie(cookie))).toBeNull();
-    expect(calls.filter((c) => c.url.startsWith(`${ISSUER}/token/`))).toHaveLength(1);
   });
 
-  it("keeps the session on a transient IdP outage", async () => {
-    mockFetch([]); // discovery fetch throws -> transient
+  it("still resolves null when clearing the dead session cookie throws", async () => {
+    mockFetch([
+      discovery,
+      { url: `${ISSUER}/token/`, status: 400, body: { error: "invalid_grant" } },
+    ]);
+    const { dataplaneToken } = await loadHelper();
+    const cookie = await expiredCookie();
+    // A jar failure must not reject the promise shared by concurrent requests
+    // (they would 500) and must not surface as an unhandled rejection.
+    jar.delete.mockImplementation(() => {
+      throw new Error("cookie jar unavailable");
+    });
+    try {
+      await expect(dataplaneToken(requestWithCookie(cookie))).resolves.toBeNull();
+    } finally {
+      jar.delete.mockReset();
+    }
+  });
+
+  it("clears the session on a transient IdP outage too", async () => {
+    mockFetch([]); // discovery fetch throws
     const { dataplaneToken } = await loadHelper();
     const cookie = await expiredCookie();
     expect(await dataplaneToken(requestWithCookie(cookie))).toBeNull();
-    expect(jar.delete).not.toHaveBeenCalled();
+    // An outage leaves no token to send. Keeping the cookie would let the proxy
+    // gate pass while every dataplane call 401s; clearing it routes the next
+    // request through the session-required 401 and back to /login.
+    expect(jar.delete).toHaveBeenCalledWith(COOKIE);
+  });
+
+  it("does not negative-cache a failed refresh — the next request retries", async () => {
+    let tokenCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request) => {
+        const u = String(url);
+        if (u.startsWith(`${ISSUER}/.well-known`)) {
+          return { ok: true, status: 200, json: async () => ({ token_endpoint: `${ISSUER}/token/` }) };
+        }
+        tokenCalls += 1;
+        // First attempt hits a transient IdP failure; the retry succeeds.
+        return tokenCalls === 1
+          ? { ok: false, status: 503, json: async () => ({}) }
+          : {
+              ok: true,
+              status: 200,
+              json: async () => ({ access_token: "new-access", refresh_token: "new-refresh", expires_in: 300 }),
+            };
+      })
+    );
+    const { dataplaneToken } = await loadHelper();
+    const cookie = await expiredCookie();
+
+    expect(await dataplaneToken(requestWithCookie(cookie))).toBeNull();
+    // A cached null would keep every request unauthenticated for a minute even
+    // after the IdP recovers.
+    expect(await dataplaneToken(requestWithCookie(cookie))).toBe("new-access");
+    expect(tokenCalls).toBe(2);
   });
 
   it("deletes stale higher-index chunks when the rotated cookie shrinks", async () => {
