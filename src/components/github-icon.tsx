@@ -2,10 +2,14 @@
  * The GitHub mark. lucide-react 1.x dropped brand icons, so this small inline
  * SVG replaces the old `Github` icon; it is always decorative next to literal
  * "GitHub" text, hence aria-hidden.
+ *
+ * Source: Bootstrap Icons (MIT).
  */
 export function GitHubIcon({ className }: { className?: string }) {
   return (
     <svg
+      width="16"
+      height="16"
       viewBox="0 0 16 16"
       fill="currentColor"
       aria-hidden="true"
