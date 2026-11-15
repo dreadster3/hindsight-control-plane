@@ -331,7 +331,7 @@ describe("dataplaneToken — refresh rotation edge cases", () => {
   });
 
   it("clears the session when the IdP rejects the refresh token (invalid_grant)", async () => {
-    const calls = mockFetch([
+    mockFetch([
       discovery,
       { url: `${ISSUER}/token/`, status: 400, body: { error: "invalid_grant" } },
     ]);
@@ -342,17 +342,47 @@ describe("dataplaneToken — refresh rotation edge cases", () => {
     // Dead session: cookie cleared so the next request gets a session-required
     // 401 and the UI re-logins instead of being locked out for 30 days.
     expect(jar.delete).toHaveBeenCalledWith(COOKIE);
-    // The failure is cached briefly: no hammering the IdP with the dead token.
-    expect(await dataplaneToken(requestWithCookie(cookie))).toBeNull();
-    expect(calls.filter((c) => c.url.startsWith(`${ISSUER}/token/`))).toHaveLength(1);
   });
 
-  it("keeps the session on a transient IdP outage", async () => {
-    mockFetch([]); // discovery fetch throws -> transient
+  it("clears the session on a transient IdP outage too", async () => {
+    mockFetch([]); // discovery fetch throws
     const { dataplaneToken } = await loadHelper();
     const cookie = await expiredCookie();
     expect(await dataplaneToken(requestWithCookie(cookie))).toBeNull();
-    expect(jar.delete).not.toHaveBeenCalled();
+    // An outage leaves no token to send. Keeping the cookie would let the proxy
+    // gate pass while every dataplane call 401s; clearing it routes the next
+    // request through the session-required 401 and back to /login.
+    expect(jar.delete).toHaveBeenCalledWith(COOKIE);
+  });
+
+  it("does not negative-cache a failed refresh — the next request retries", async () => {
+    let tokenCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request) => {
+        const u = String(url);
+        if (u.startsWith(`${ISSUER}/.well-known`)) {
+          return { ok: true, status: 200, json: async () => ({ token_endpoint: `${ISSUER}/token/` }) };
+        }
+        tokenCalls += 1;
+        // First attempt hits a transient IdP failure; the retry succeeds.
+        return tokenCalls === 1
+          ? { ok: false, status: 503, json: async () => ({}) }
+          : {
+              ok: true,
+              status: 200,
+              json: async () => ({ access_token: "new-access", refresh_token: "new-refresh", expires_in: 300 }),
+            };
+      })
+    );
+    const { dataplaneToken } = await loadHelper();
+    const cookie = await expiredCookie();
+
+    expect(await dataplaneToken(requestWithCookie(cookie))).toBeNull();
+    // A cached null would keep every request unauthenticated for a minute even
+    // after the IdP recovers.
+    expect(await dataplaneToken(requestWithCookie(cookie))).toBe("new-access");
+    expect(tokenCalls).toBe(2);
   });
 
   it("deletes stale higher-index chunks when the rotated cookie shrinks", async () => {

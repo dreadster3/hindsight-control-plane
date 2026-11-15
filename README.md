@@ -111,8 +111,9 @@ Vendored from the upstream monorepo so this repo stands alone:
   rejected. **The lock is per-process: run a single control-plane replica.**
   With multiple replicas a rotation race can still occur; the loser's session
   is cleared and the user re-authenticates (silently while the IdP session lives).
-- A refresh token rejected by the IdP (4xx) clears the session cookie so the
-  browser returns to the login page; transient IdP outages keep the session.
+- A failed refresh — token rejected by the IdP or the IdP unreachable — clears
+  the session cookie so the browser returns to the login page, instead of
+  passing the proxy gate while every dataplane call 401s.
 - Keep the API's auth as the only gate — do not trust proxy-injected identity
   headers (see the hybrid-tenant extension's README).
 ## Docker

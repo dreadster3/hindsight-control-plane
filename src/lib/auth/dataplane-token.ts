@@ -75,21 +75,16 @@ function getTokenEndpoint(): Promise<string> {
  */
 const refreshLocks = new Map<string, Promise<string | null>>();
 
-/** raw pre-rotation cookie → settled refresh result (see REFRESH_RESULT_TTL_MS). */
-const refreshResults = new Map<
-  string,
-  { at: number; accessToken: string | null; cookieValue: string | null }
->();
+/** raw pre-rotation cookie → settled successful refresh (see REFRESH_RESULT_TTL_MS). */
+const refreshResults = new Map<string, { at: number; accessToken: string; cookieValue: string }>();
 
 type RefreshOutcome =
   | { kind: "ok"; jwt: JWT }
-  /** The IdP rejected the credential (4xx) — the session is dead, clear it. */
-  | { kind: "invalid" }
-  /** Network/5xx — transient; keep the session so a later retry can recover. */
-  | { kind: "transient" };
+  /** No usable token came back (rejected credential, IdP down, bad response). */
+  | { kind: "failed" };
 
 async function refreshAccessToken(jwt: JWT): Promise<RefreshOutcome> {
-  if (!jwt.refresh_token) return { kind: "invalid" };
+  if (!jwt.refresh_token) return { kind: "failed" };
   let res: Response;
   try {
     const endpoint = await getTokenEndpoint();
@@ -109,12 +104,12 @@ async function refreshAccessToken(jwt: JWT): Promise<RefreshOutcome> {
       "[Control Plane] OIDC refresh failed (IdP unreachable):",
       err instanceof Error ? err.message : String(err)
     );
-    return { kind: "transient" };
+    return { kind: "failed" };
   }
   if (!res.ok) {
     // Status only — the body can carry token material.
     console.error(`[Control Plane] OIDC refresh rejected with status ${res.status}`);
-    return res.status >= 400 && res.status < 500 ? { kind: "invalid" } : { kind: "transient" };
+    return { kind: "failed" };
   }
   try {
     const data = (await res.json()) as {
@@ -122,7 +117,7 @@ async function refreshAccessToken(jwt: JWT): Promise<RefreshOutcome> {
       refresh_token?: string;
       expires_in?: number;
     };
-    if (!data.access_token) return { kind: "invalid" };
+    if (!data.access_token) return { kind: "failed" };
     return {
       kind: "ok",
       jwt: {
@@ -134,7 +129,7 @@ async function refreshAccessToken(jwt: JWT): Promise<RefreshOutcome> {
       },
     };
   } catch {
-    return { kind: "transient" };
+    return { kind: "failed" };
   }
 }
 
@@ -191,8 +186,9 @@ async function clearSessionCookie(request: NextRequest, cookieName: string): Pro
 
 /**
  * The bearer token for a dataplane request, or null when there is none.
- * In OIDC mode null means "no valid session" — the proxy already blocks such
- * requests on protected routes, and the dataplane enforces auth regardless.
+ * In OIDC mode null means "no valid session": a failed refresh clears the
+ * session cookie, so the next request is refused by the proxy's
+ * session-required 401 and the UI returns to /login.
  */
 export async function dataplaneToken(request: NextRequest): Promise<string | null> {
   if (!isOidcEnabled()) {
@@ -222,9 +218,7 @@ export async function dataplaneToken(request: NextRequest): Promise<string | nul
   // re-set the rotated cookie on this response) instead of refreshing again.
   const cached = refreshResults.get(raw);
   if (cached && Date.now() - cached.at < REFRESH_RESULT_TTL_MS) {
-    if (cached.cookieValue) {
-      await writeSessionCookie(request, cookieName, cached.cookieValue);
-    }
+    await writeSessionCookie(request, cookieName, cached.cookieValue);
     return cached.accessToken;
   }
 
@@ -244,21 +238,20 @@ export async function dataplaneToken(request: NextRequest): Promise<string | nul
           });
           return outcome.jwt.access_token;
         }
-        if (outcome.kind === "invalid") {
-          // Dead refresh token: clear the session so the next request gets a
-          // session-required 401 and the UI re-logins, instead of passing the
-          // proxy gate for 30 days while every dataplane call 401s.
-          await clearSessionCookie(request, cookieName);
-        }
-        refreshResults.set(raw, { at: Date.now(), accessToken: null, cookieValue: null });
-        return null;
       } catch (err) {
         console.error(
           "[Control Plane] OIDC session refresh errored:",
           err instanceof Error ? err.message : String(err)
         );
-        return null;
       }
+      // Any failure — rejected credential or IdP outage — leaves no token to
+      // send, and the request would go out unauthenticated. Clear the session
+      // so the next request gets the proxy's session-required 401 and the UI
+      // re-logins, instead of passing the gate for 30 days while every
+      // dataplane call 401s. Only successes are cached, so a later request
+      // retries the IdP rather than replaying this failure.
+      await clearSessionCookie(request, cookieName);
+      return null;
     })();
     refreshLocks.set(raw, pending);
     void pending.finally(() => refreshLocks.delete(raw));
