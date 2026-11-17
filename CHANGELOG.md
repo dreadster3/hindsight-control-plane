@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.1](https://github.com/dreadster3/hindsight-control-plane/compare/v0.1.0...v0.1.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **auth:** clear session on failed token refresh ([#18](https://github.com/dreadster3/hindsight-control-plane/issues/18)) ([8683761](https://github.com/dreadster3/hindsight-control-plane/commit/86837617796e92d740f634d27171e6e9ecad0bef))
+* **cli:** honor HINDSIGHT_CP_HOSTNAME/PORT ([#16](https://github.com/dreadster3/hindsight-control-plane/issues/16)) ([2152d82](https://github.com/dreadster3/hindsight-control-plane/commit/2152d82b132d1260713d1a4bd5e257b94e4ffd79))
+
 ## 0.1.0 (2026-11-15)
 
 
