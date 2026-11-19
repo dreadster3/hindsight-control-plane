@@ -88,11 +88,13 @@ On that application's OAuth2 provider:
    (add `groups` if you use the extension's groups allowlist). `offline_access` is
    REQUIRED for refresh tokens on Authentik >= 2024.2 — without it the IdP issues
    none and control-plane sessions cannot survive access-token expiry.
-4. Add the `offline_access` **scope mapping** to the provider and ensure the
-   `refresh_token` grant type is enabled (all grant types are selected by
-   default). There is no "refresh tokens" toggle; the only refresh-related
-   provider fields are the `refresh_token_validity` / `refresh_token_threshold`
-   durations.
+4. Add the `offline_access` **scope mapping** to the provider; the
+   `refresh_token` grant type is enabled by default. There is no "refresh
+   tokens" toggle; the only refresh-related provider fields are the
+   `refresh_token_validity` / `refresh_token_threshold` durations.
+
+Sessions minted before this change carry no `refresh_token`: re-authenticate
+once after upgrading to gain silent refresh.
 
 If `HINDSIGHT_API_TENANT_OAUTH_AUDIENCE` is set, the control plane's tokens must
 carry that audience — easiest is to leave it unset or use one shared application.
