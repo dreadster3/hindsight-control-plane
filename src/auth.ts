@@ -36,8 +36,19 @@ declare module "next-auth/jwt" {
   }
 }
 
+/**
+ * Authentik issues no refresh_token unless `offline_access` is requested.
+ * An explicit scope replaces @auth/core's `openid profile email` default, so
+ * both must be one string.
+ */
+const AUTHENTIK_SCOPE = "openid profile email offline_access";
+
+export const authentikProvider = Authentik({
+  authorization: { params: { scope: AUTHENTIK_SCOPE } },
+});
+
 export const { handlers, signIn, auth } = NextAuth({
-  providers: isOidcEnabled() ? [Authentik] : [],
+  providers: isOidcEnabled() ? [authentikProvider] : [],
   session: { strategy: "jwt" },
   callbacks: {
     jwt({ token, account, profile }) {
