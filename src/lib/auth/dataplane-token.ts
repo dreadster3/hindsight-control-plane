@@ -158,7 +158,13 @@ async function writeSessionCookie(
       (existing.name === cookieName || existing.name.startsWith(`${cookieName}.`)) &&
       !newNames.has(existing.name)
     ) {
-      jar.delete(existing.name);
+      jar.delete({
+        name: existing.name,
+        path: "/",
+        secure: cookieName.startsWith("__Secure-"),
+        sameSite: "lax",
+        httpOnly: true,
+      });
     }
   }
   for (const chunk of chunks) {
@@ -179,7 +185,16 @@ async function clearSessionCookie(request: NextRequest, cookieName: string): Pro
   const jar = await cookies();
   for (const existing of request.cookies.getAll()) {
     if (existing.name === cookieName || existing.name.startsWith(`${cookieName}.`)) {
-      jar.delete(existing.name);
+      // A delete is a Set-Cookie with a past expiry, so it must repeat the
+      // write's attributes: browsers drop a `__Secure-` one without `Secure`
+      // (RFC 6265bis) and the session cookie survives.
+      jar.delete({
+        name: existing.name,
+        path: "/",
+        secure: cookieName.startsWith("__Secure-"),
+        sameSite: "lax",
+        httpOnly: true,
+      });
     }
   }
 }

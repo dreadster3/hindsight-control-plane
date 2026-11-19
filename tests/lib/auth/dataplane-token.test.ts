@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { ResponseCookies } from "next/dist/server/web/spec-extension/cookies";
 import { encode } from "next-auth/jwt";
 
 import { oidcSessionCookieName } from "@/lib/auth/oidc-config";
@@ -28,6 +29,28 @@ function requestWithCookie(value: string): NextRequest {
   const req = new NextRequest(new URL("/api/banks", "http://localhost:9999"));
   req.cookies.set(COOKIE, value);
   return req;
+}
+
+/**
+ * The deletion must repeat the write's attributes: a delete is just a
+ * Set-Cookie with a past expiry, and browsers ignore a `__Secure-` one that
+ * omits `Secure` (RFC 6265bis), leaving the session cookie alive.
+ */
+function expectCookieDeleted(name: string, secure: boolean) {
+  expect(jar.delete).toHaveBeenCalledWith({
+    name,
+    path: "/",
+    secure,
+    sameSite: "lax",
+    httpOnly: true,
+  });
+}
+
+/** Render a captured `jar.delete(...)` argument the way next/headers writes it. */
+function serializedDelete(call: unknown[]): string {
+  const headers = new Headers();
+  new ResponseCookies(headers).delete(call[0] as { name: string });
+  return headers.getSetCookie()[0] ?? "";
 }
 
 /** Fresh module per test: the token-endpoint cache and env reads are module-level. */
@@ -228,7 +251,60 @@ describe("dataplaneToken — OIDC mode", () => {
     expect(names).toContain(`${COOKIE}.0`);
     expect(names).toContain(`${COOKIE}.1`);
     // The old unchunked cookie must be removed so reads don't mix values.
-    expect(jar.delete).toHaveBeenCalledWith(COOKIE);
+    expectCookieDeleted(COOKIE, false);
+  });
+
+  it("clears the dead __Secure- session cookie in a form the browser honors", async () => {
+    mockFetch([]);
+    const { dataplaneToken } = await loadHelper();
+    const secureName = oidcSessionCookieName(true);
+    const jwe = await encode({
+      token: { sub: "alice", expires_at: Math.floor(Date.now() / 1000) + 3600 },
+      secret: SECRET,
+      salt: secureName,
+    });
+    const req = new NextRequest(new URL("/api/banks", "https://cp.example"));
+    req.cookies.set(secureName, jwe);
+
+    expect(await dataplaneToken(req)).toBeNull();
+    expectCookieDeleted(secureName, true);
+
+    // Serialize it the way next/headers writes it. Without `Secure` the browser
+    // rejects the deletion outright and the 30-day cookie survives the logout.
+    const setCookie = serializedDelete(jar.delete.mock.calls[0]);
+    expect(setCookie).toContain(`${secureName}=;`);
+    // The name itself contains "Secure", so anchor on the attribute segment.
+    expect(setCookie).toContain("; Secure");
+    expect(setCookie).toContain("; Path=/");
+    expect(setCookie).toContain("Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+  });
+
+  it("clears every chunk of a chunked __Secure- session cookie with Secure", async () => {
+    mockFetch([]);
+    const { dataplaneToken } = await loadHelper();
+    const secureName = oidcSessionCookieName(true);
+    const jwe = await encode({
+      token: { sub: "alice", expires_at: Math.floor(Date.now() / 1000) + 3600 },
+      secret: SECRET,
+      salt: secureName,
+    });
+    // getToken joins every cookie under the prefix, so a real chunked session
+    // arrives as `.0`/`.1` with no base-name copy.
+    const mid = Math.ceil(jwe.length / 2);
+    const req = new NextRequest(new URL("/api/banks", "https://cp.example"));
+    req.cookies.set(`${secureName}.0`, jwe.slice(0, mid));
+    req.cookies.set(`${secureName}.1`, jwe.slice(mid));
+
+    expect(await dataplaneToken(req)).toBeNull();
+
+    const serialized = jar.delete.mock.calls.map(serializedDelete);
+    expect(serialized).toHaveLength(2);
+    for (const chunk of [`${secureName}.0`, `${secureName}.1`]) {
+      expectCookieDeleted(chunk, true);
+    }
+    for (const setCookie of serialized) {
+      expect(setCookie).toContain("; Secure");
+    }
   });
 
   it("clears the session when the decoded JWT has no access token", async () => {
@@ -241,7 +317,7 @@ describe("dataplaneToken — OIDC mode", () => {
     expect(await dataplaneToken(requestWithCookie(cookie))).toBeNull();
     // The cookie decodes fine, so the proxy still lets it through: leaving it
     // set means a permanent unauthenticated 401 storm with no logout.
-    expect(jar.delete).toHaveBeenCalledWith(COOKIE);
+    expectCookieDeleted(COOKIE, false);
   });
 
   it("ignores a cookie encrypted with a different secret", async () => {
@@ -354,7 +430,7 @@ describe("dataplaneToken — refresh rotation edge cases", () => {
     expect(await dataplaneToken(requestWithCookie(cookie))).toBeNull();
     // Dead session: cookie cleared so the next request gets a session-required
     // 401 and the UI re-logins instead of being locked out for 30 days.
-    expect(jar.delete).toHaveBeenCalledWith(COOKIE);
+    expectCookieDeleted(COOKIE, false);
   });
 
   it("still resolves null when clearing the dead session cookie throws", async () => {
@@ -384,7 +460,7 @@ describe("dataplaneToken — refresh rotation edge cases", () => {
     // An outage leaves no token to send. Keeping the cookie would let the proxy
     // gate pass while every dataplane call 401s; clearing it routes the next
     // request through the session-required 401 and back to /login.
-    expect(jar.delete).toHaveBeenCalledWith(COOKIE);
+    expectCookieDeleted(COOKIE, false);
   });
 
   it("does not negative-cache a failed refresh — the next request retries", async () => {
@@ -428,10 +504,36 @@ describe("dataplaneToken — refresh rotation edge cases", () => {
     req.cookies.set(`${COOKIE}.2`, jwe.slice(2 * third));
 
     expect(await dataplaneToken(req)).toBe("new-access");
-    const deleted = jar.delete.mock.calls.map((c) => c[0]);
+    const deleted = jar.delete.mock.calls.map((c) => (c[0] as { name: string }).name);
     expect(deleted).toContain(`${COOKIE}.0`);
     expect(deleted).toContain(`${COOKIE}.1`);
     expect(deleted).toContain(`${COOKIE}.2`);
+  });
+
+  it("deletes stale __Secure- chunks with Secure when the rotated cookie shrinks", async () => {
+    mockFetch(okRefresh);
+    const { dataplaneToken } = await loadHelper();
+    const secureName = oidcSessionCookieName(true);
+    const jwe = await encode({
+      token: {
+        sub: "alice",
+        access_token: "old-access",
+        refresh_token: "old-refresh",
+        expires_at: Math.floor(Date.now() / 1000) - 10,
+      },
+      secret: SECRET,
+      salt: secureName,
+    });
+    const req = new NextRequest(new URL("/api/banks", "https://cp.example"));
+    const third = Math.ceil(jwe.length / 3);
+    req.cookies.set(`${secureName}.0`, jwe.slice(0, third));
+    req.cookies.set(`${secureName}.1`, jwe.slice(third, 2 * third));
+    req.cookies.set(`${secureName}.2`, jwe.slice(2 * third));
+
+    expect(await dataplaneToken(req)).toBe("new-access");
+    for (const chunk of [`${secureName}.0`, `${secureName}.1`, `${secureName}.2`]) {
+      expectCookieDeleted(chunk, true);
+    }
   });
 
   it("writes the rotated cookie with NextAuth's 30-day maxAge", async () => {
