@@ -46,6 +46,13 @@ function expectCookieDeleted(name: string, secure: boolean) {
   });
 }
 
+/** Render a captured `jar.delete(...)` argument the way next/headers writes it. */
+function serializedDelete(call: unknown[]): string {
+  const headers = new Headers();
+  new ResponseCookies(headers).delete(call[0] as { name: string });
+  return headers.getSetCookie()[0] ?? "";
+}
+
 /** Fresh module per test: the token-endpoint cache and env reads are module-level. */
 async function loadHelper() {
   vi.resetModules();
@@ -264,13 +271,40 @@ describe("dataplaneToken — OIDC mode", () => {
 
     // Serialize it the way next/headers writes it. Without `Secure` the browser
     // rejects the deletion outright and the 30-day cookie survives the logout.
-    const headers = new Headers();
-    new ResponseCookies(headers).delete(jar.delete.mock.calls[0][0]);
-    const [setCookie] = headers.getSetCookie();
+    const setCookie = serializedDelete(jar.delete.mock.calls[0]);
     expect(setCookie).toContain(`${secureName}=;`);
-    expect(setCookie).toContain("Secure");
-    expect(setCookie).toContain("Path=/");
+    // The name itself contains "Secure", so anchor on the attribute segment.
+    expect(setCookie).toContain("; Secure");
+    expect(setCookie).toContain("; Path=/");
     expect(setCookie).toContain("Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+  });
+
+  it("clears every chunk of a chunked __Secure- session cookie with Secure", async () => {
+    mockFetch([]);
+    const { dataplaneToken } = await loadHelper();
+    const secureName = oidcSessionCookieName(true);
+    const jwe = await encode({
+      token: { sub: "alice", expires_at: Math.floor(Date.now() / 1000) + 3600 },
+      secret: SECRET,
+      salt: secureName,
+    });
+    // getToken joins every cookie under the prefix, so a real chunked session
+    // arrives as `.0`/`.1` with no base-name copy.
+    const mid = Math.ceil(jwe.length / 2);
+    const req = new NextRequest(new URL("/api/banks", "https://cp.example"));
+    req.cookies.set(`${secureName}.0`, jwe.slice(0, mid));
+    req.cookies.set(`${secureName}.1`, jwe.slice(mid));
+
+    expect(await dataplaneToken(req)).toBeNull();
+
+    const serialized = jar.delete.mock.calls.map(serializedDelete);
+    expect(serialized).toHaveLength(2);
+    for (const chunk of [`${secureName}.0`, `${secureName}.1`]) {
+      expectCookieDeleted(chunk, true);
+    }
+    for (const setCookie of serialized) {
+      expect(setCookie).toContain("; Secure");
+    }
   });
 
   it("clears the session when the decoded JWT has no access token", async () => {
