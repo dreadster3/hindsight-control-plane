@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.2](https://github.com/dreadster3/hindsight-control-plane/compare/v0.1.1...v0.1.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* **auth:** clear session cookie with Secure attr ([#21](https://github.com/dreadster3/hindsight-control-plane/issues/21)) ([1a7aad9](https://github.com/dreadster3/hindsight-control-plane/commit/1a7aad976af40bb09e9dd768e4c6c39c051ab860))
+* **auth:** request offline_access for refresh ([#20](https://github.com/dreadster3/hindsight-control-plane/issues/20)) ([59067e1](https://github.com/dreadster3/hindsight-control-plane/commit/59067e106572f71b571499c0af426eac1f8d1642))
+
 ## [0.1.1](https://github.com/dreadster3/hindsight-control-plane/compare/v0.1.0...v0.1.1) (2026-11-17)
 
 
