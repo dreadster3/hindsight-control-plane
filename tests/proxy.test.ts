@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { encode } from "next-auth/jwt";
-import { proxy } from "@/proxy";
+import { config, proxy } from "@/proxy";
 import { ACCESS_KEY_COOKIE, createSessionToken } from "@/lib/auth/session";
 import { oidcSessionCookieName } from "@/lib/auth/oidc-config";
 
@@ -111,6 +111,11 @@ describe("proxy session handling (OIDC mode)", () => {
     expect(res.status).toBe(200);
   });
 
+  it("gates an extension-suffixed API path too", async () => {
+    expect((await oidcRequest("/api/memories/x.json", false)).status).toBe(401);
+    expect((await oidcRequest("/api/memories/x.json", true)).status).toBe(200);
+  });
+
   it("ignores the access-key cookie in OIDC mode", async () => {
     const req = new NextRequest(new URL("/api/banks", "http://localhost:9999"));
     req.cookies.set(ACCESS_KEY_COOKIE, await createSessionToken(KEY));
@@ -172,5 +177,92 @@ describe("proxy session handling (OIDC mode)", () => {
     const res = await oidcRequest("/en/dashboard", true);
     expect(res.status).toBe(200);
     expect(res.headers.get("location")).toBeNull();
+  });
+});
+describe("proxy matcher", () => {
+  it("matches every API route, whatever its last segment looks like", () => {
+    expect(Array.isArray(config.matcher)).toBe(true);
+    expect((config.matcher as string[])[0]).toBe("/api/:path*");
+  });
+
+  it("excludes only root-level asset files from the page matcher", () => {
+    const pagePattern = (config.matcher as string[])[1];
+    expect(pagePattern).toContain("[^/]+\\.");
+
+    const matches = (pathname: string) => new RegExp(`^${pagePattern}$`).test(pathname);
+    // A bank page whose id ends in ".json" must still be gated…
+    expect(matches("/banks/notes.json")).toBe(true);
+    // …while root-level assets (ours and Next's) are skipped.
+    expect(matches("/logo.png")).toBe(false);
+    expect(matches("/fonts/inter.woff2")).toBe(false);
+    expect(matches("/_next/static/chunk.js")).toBe(false);
+  });
+});
+
+describe("extension-suffixed API paths", () => {
+  beforeEach(() => vi.stubEnv("HINDSIGHT_CP_ACCESS_KEY", KEY));
+  afterEach(() => vi.unstubAllEnvs());
+
+  const paths = [
+    "/api/memories/x.json",
+    "/api/stats/x.json",
+    "/api/knowledge-banks/x.json",
+    "/api/banks/x.js",
+    "/api/entities/x.css",
+  ];
+
+  for (const path of paths) {
+    it(`gates ${path} without a session`, async () => {
+      const res = await request(path, false);
+      expect(res.status).toBe(401);
+      expect(res.headers.get("x-hindsight-session-required")).toBe("1");
+    });
+  }
+
+  it("lets an authenticated caller through", async () => {
+    expect((await request("/api/memories/x.json", true)).status).toBe(200);
+  });
+});
+
+describe("public path boundaries", () => {
+  beforeEach(() => vi.stubEnv("HINDSIGHT_CP_ACCESS_KEY", KEY));
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("keeps /api/health public but not /api/healthz", async () => {
+    expect((await request("/api/health", false)).status).toBe(200);
+    expect((await request("/api/healthz", false)).status).toBe(401);
+  });
+
+  it("keeps /api/auth public but not /api/authx", async () => {
+    expect((await request("/api/auth/session", false)).status).toBe(200);
+    expect((await request("/api/authx", false)).status).toBe(401);
+  });
+
+  it("keeps /login public but redirects /login-x", async () => {
+    expect((await request("/login", false)).headers.get("location")).toBeNull();
+    const sibling = await request("/login-x", false);
+    expect(sibling.status).toBe(307);
+    expect(sibling.headers.get("location")).toBe(
+      "http://localhost:9999/login?returnTo=%2Flogin-x"
+    );
+  });
+});
+
+describe("content security policy", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("sends a report-only policy with a fresh nonce per request", async () => {
+    const first = await request("/login", false);
+    const second = await request("/login", false);
+    const csp = first.headers.get("content-security-policy-report-only");
+
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toMatch(/script-src 'self' 'nonce-[^']+'/);
+    expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("frame-ancestors 'self'");
+    // Report-Only only: enforcing it would break the prerendered shells, which
+    // emit inline scripts without a nonce.
+    expect(first.headers.get("content-security-policy")).toBeNull();
+    expect(second.headers.get("content-security-policy-report-only")).not.toBe(csp);
   });
 });

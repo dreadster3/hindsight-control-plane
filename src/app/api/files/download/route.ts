@@ -1,3 +1,4 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
 import { DATAPLANE_URL, getDataplaneHeaders } from "@/lib/hindsight-client";
@@ -10,6 +11,9 @@ import { dataplaneToken } from "@/lib/auth/dataplane-token";
  * browser downloads it directly.
  */
 export async function GET(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const path = request.nextUrl.searchParams.get("path");

@@ -1,3 +1,4 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest } from "next/server";
 import { sdk, lowLevelClientFor } from "@/lib/hindsight-client";
 import { dataplaneToken } from "@/lib/auth/dataplane-token";
@@ -7,6 +8,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ agentId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   const { agentId } = await params;
   const response = await sdk.getAgentStats({

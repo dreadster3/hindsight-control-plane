@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type ListBanksArg = { query: Record<string, unknown> };
 
@@ -27,6 +27,16 @@ function makeRequest(url: string): NextRequest {
 }
 
 describe("GET /api/banks", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("refuses a caller with no session, even with the proxy out of the way", async () => {
+    vi.stubEnv("HINDSIGHT_CP_ACCESS_KEY", "test-access-key");
+    const res = await GET(makeRequest("http://localhost/api/banks"));
+    expect(res.status).toBe(401);
+    expect(res.headers.get("x-hindsight-session-required")).toBe("1");
+    expect(listBanks).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     listBanks.mockReset();
     listBanks.mockResolvedValue({

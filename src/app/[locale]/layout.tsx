@@ -7,6 +7,7 @@ import { BankProvider } from "@/lib/bank-context";
 import { FeaturesProvider } from "@/lib/features-context";
 import { ThemeProvider } from "@/lib/theme-context";
 import { Toaster } from "@/components/ui/sonner";
+import { withBasePath } from "@/lib/base-path";
 
 // Inter preloaded server-side so every weight (400/500/600/700) is ready
 // before paint. The Google Fonts @import this replaces loaded weights lazily,
@@ -33,20 +34,9 @@ export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
 }
 
-// Anti-FOUC: apply the theme's `.dark` class before first paint. ThemeProvider
-// only reads localStorage/system preference in a useEffect (after paint), so
-// without this a dark-mode user gets a light flash on every hard refresh. This
-// runs synchronously as the first <body> child, before the content below it
-// paints. Keep the logic identical to lib/theme-context.tsx (saved || system).
-const THEME_INIT_SCRIPT = `
-(function () {
-  try {
-    var saved = localStorage.getItem('theme');
-    var dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
-    document.documentElement.classList.toggle('dark', dark);
-  } catch (e) {}
-})();
-`;
+// Anti-FOUC: public/theme-init.js applies the theme's `.dark` class before
+// first paint. It is a static file (CSP needs no inline-script exception) and,
+// as the first <body> child, runs synchronously before the content paints.
 
 export default async function LocaleLayout({
   children,
@@ -69,7 +59,9 @@ export default async function LocaleLayout({
       suppressHydrationWarning
     >
       <body className="bg-background text-foreground">
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        {/* Blocking on purpose: it must set the theme class before first paint. */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script src={withBasePath("/theme-init.js")} />
         <ThemeProvider>
           <FeaturesProvider>
             <BankProvider>

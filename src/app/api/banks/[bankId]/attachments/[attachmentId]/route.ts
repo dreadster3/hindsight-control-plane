@@ -1,3 +1,4 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
 import { DATAPLANE_URL, getDataplaneHeaders } from "@/lib/hindsight-client";
@@ -20,6 +21,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string; attachmentId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const { bankId, attachmentId } = await params;

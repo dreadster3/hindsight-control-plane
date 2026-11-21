@@ -104,10 +104,8 @@ export function respondWithSdk<T>(
       error: failureLabel,
       ...(errorKey ? { errorKey } : {}),
       details,
-      upstream: {
-        status: upstreamStatus,
-        detail: exposeDetails ? (result.error ?? null) : null,
-      },
+      // Status only: `details` above already carries what the UI renders.
+      upstream: { status: upstreamStatus },
     };
 
     const localizedPayload = errorKey

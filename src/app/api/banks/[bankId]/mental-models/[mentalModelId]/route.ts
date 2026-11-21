@@ -1,3 +1,5 @@
+import { readJsonBody } from "@/lib/body-limit";
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
 import { dataplaneBankUrl, getDataplaneHeaders } from "@/lib/hindsight-client";
@@ -7,6 +9,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string; mentalModelId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const { bankId, mentalModelId } = await params;
@@ -56,6 +61,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string; mentalModelId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const { bankId, mentalModelId } = await params;
@@ -70,7 +78,11 @@ export async function PATCH(
       );
     }
 
-    const body = await request.json();
+    const parsedBody = await readJsonBody(request);
+
+    if (!parsedBody.ok) return parsedBody.response;
+
+    const body = parsedBody.body;
 
     const response = await fetch(
       dataplaneBankUrl(bankId, `/mental-models/${encodeURIComponent(mentalModelId)}`),
@@ -111,6 +123,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string; mentalModelId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const { bankId, mentalModelId } = await params;

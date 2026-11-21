@@ -1,4 +1,6 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
+import { readJsonBody } from "@/lib/body-limit";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
 import { dataplaneBankUrl, getDataplaneHeaders } from "@/lib/hindsight-client";
 import { dataplaneToken } from "@/lib/auth/dataplane-token";
@@ -15,10 +17,16 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const { bankId } = await params;
-    const body = await request.json().catch(() => ({}));
+    // Optional body: a bodiless POST still clones with the dataplane defaults.
+    const parsedBody = await readJsonBody(request);
+    if (!parsedBody.ok && parsedBody.tooLarge) return parsedBody.response;
+    const body = parsedBody.ok ? parsedBody.body : {};
     const targetBankId = body?.target_bank_id;
     if (!targetBankId || typeof targetBankId !== "string") {
       return NextResponse.json(

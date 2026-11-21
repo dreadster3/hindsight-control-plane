@@ -120,6 +120,34 @@ Vendored from the upstream monorepo so this repo stands alone:
   identity only; API routes read the access token from the JWE cookie server-side.
 - The edge proxy (`src/proxy.ts`) only decodes the session cookie — refresh and
   all dataplane calls happen in Node route handlers.
+- **The proxy is an optimization, not the security boundary.** A matcher
+  regression once let an asset-suffixed API path (`PATCH /api/memories/x.json`)
+  reach its handler with no session. In OIDC mode the dataplane still refused;
+  in **access-key mode the same bypass means every memory is exposed**, because
+  `dataplaneToken()` hands the shared dataplane key to any caller. Every
+  non-public API handler therefore calls `requireSession()` itself
+  (`src/lib/auth/require-session.ts`) before it reads a body or touches the
+  dataplane, and the proxy matcher treats `/api/:path*` as always gated. Keep
+  both: neither one is allowed to be the only gate.
+- Handlers bound their own request bodies (`src/lib/body-limit.ts`): JSON routes
+  cap at 10 MB, upload routes at `HINDSIGHT_CP_MAX_UPLOAD_SIZE`, and the
+  knowledge-banks stream is counted and cut off past the ceiling. The proxy's
+  Content-Length check alone is bypassable (a chunked body carries no length).
+- `/api/auth/login` is rate limited per IP (5 attempts/minute, in-process). The
+  bucket is per replica; the edge limiter is the primary control.
+- An unauthenticated `/api/health` reports only `dataplane: {status:
+  "auth-required"}` — the dataplane hostname/port and error text are internal
+  topology. The authenticated response is unchanged.
+- A CSP is sent `Content-Security-Policy-Report-Only` with a per-request nonce
+  (`src/proxy.ts`); enforcement follows once the UI flows report no violations.
+  The theme bootstrap is a static file (`public/theme-init.js`), not an inline
+  script. Enforcement also needs the prerendered routes (`/[locale]/dashboard`,
+  banks) made dynamic or hashed: their static shell emits inline RSC scripts
+  with no nonce.
+- Upload bodies are counted in the handlers, but through the deployed proxy
+  Next.js clones the request and truncates a chunked body at
+  `proxyClientMaxBodySize` (100 MB) before the handler runs — size the pod for
+  that clone, and enforce a hard ceiling at the edge.
 - Refresh is serialized per session (in-process lock) and settled results are
   cached briefly for requests still carrying the pre-rotation cookie. Authentik
   rotates refresh tokens, so concurrent refreshes with the same token would be
@@ -131,6 +159,12 @@ Vendored from the upstream monorepo so this repo stands alone:
   passing the proxy gate while every dataplane call 401s.
 - Keep the API's auth as the only gate — do not trust proxy-injected identity
   headers (see the hybrid-tenant extension's README).
+- Strengths worth keeping: session cookies are encrypted JWE (the IdP access and
+  refresh tokens never reach the browser), the dataplane verifies the same
+  tokens with its issuer pinned, and static-key mode compares in constant time.
+- The server logs the active auth mode (`OIDC`, `access key`, `open`) at
+  startup, so an operator can see at a glance whether anything is gated.
+
 ## Docker
 
 ```bash

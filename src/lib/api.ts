@@ -569,7 +569,7 @@ export class ControlPlaneClient {
           const errorData = await response.json();
           if (isClientError) {
             errorMessage = errorData.error || errorMessage;
-            errorDetails = errorData.details ?? errorData.detail ?? errorData.upstream?.detail;
+            errorDetails = errorData.details ?? errorData.detail;
           }
         } catch {
           if (isClientError) {

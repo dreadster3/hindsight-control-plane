@@ -1,5 +1,7 @@
+import { readJsonBody } from "@/lib/body-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
+import { clientIp, takeToken } from "@/lib/rate-limit";
 
 import {
   ACCESS_KEY_COOKIE,
@@ -8,7 +10,25 @@ import {
   sessionCookieOptions,
 } from "@/lib/auth/session";
 
+const LOGIN_ATTEMPTS_PER_MINUTE = 5;
+
 export async function POST(request: NextRequest) {
+  // A wrong key costs an attacker a bucket token, not just round-trip latency.
+  const verdict = takeToken(
+    `login:${clientIp(request)}`,
+    LOGIN_ATTEMPTS_PER_MINUTE,
+    60
+  );
+  if (verdict.limited) {
+    return NextResponse.json(
+      localizeApiErrorPayload(request, {
+        error: "Too many login attempts",
+        errorKey: "api.errors.auth.tooManyAttempts",
+      }),
+      { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds) } }
+    );
+  }
+
   const accessKey = process.env.HINDSIGHT_CP_ACCESS_KEY;
 
   // If no access key is configured, return 503
@@ -22,18 +42,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { key?: string };
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json(
-      localizeApiErrorPayload(request, {
-        error: "Invalid request body",
-        errorKey: "api.errors.auth.invalidRequestBody",
-      }),
-      { status: 400 }
-    );
-  }
+  const parsedBody = await readJsonBody<{ key?: string }>(request);
+  if (!parsedBody.ok) return parsedBody.response;
+  const body = parsedBody.body;
 
   const providedKey = body.key;
 

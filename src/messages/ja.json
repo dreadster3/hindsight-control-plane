@@ -2092,7 +2092,8 @@
         "accessKeyNotConfigured": "アクセスキーが設定されていません",
         "invalidRequestBody": "リクエスト本文が無効です",
         "invalidAccessKey": "アクセスキーが無効です",
-        "unauthorized": "認証されていません"
+        "unauthorized": "認証されていません",
+        "tooManyAttempts": "試行回数が多すぎます。しばらくしてから再度お試しください。"
       },
       "validation": {
         "bankIdRequired": "bank_id は必須です",

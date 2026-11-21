@@ -1,3 +1,4 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest } from "next/server";
 import { missingQueryParam } from "@/lib/i18n/api-errors";
 import { sdk, lowLevelClientFor } from "@/lib/hindsight-client";
@@ -6,6 +7,9 @@ import { respondWithSdk } from "@/lib/sdk-response";
 import { readTagFilter } from "@/lib/tag-filter-params";
 
 export async function GET(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   const bankId = request.nextUrl.searchParams.get("bank_id");
   if (!bankId) return missingQueryParam(request, "bank_id");
