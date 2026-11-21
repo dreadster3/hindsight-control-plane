@@ -138,7 +138,7 @@ describe("limitedBodyStream", () => {
   });
 });
 
-describe("readFormDataLimited (MAJOR-2)", () => {
+describe("readFormDataLimited", () => {
   const boundary = "----hindsight-test";
 
   it("parses a multipart body under the limit", async () => {

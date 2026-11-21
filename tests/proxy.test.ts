@@ -179,7 +179,7 @@ describe("proxy session handling (OIDC mode)", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 });
-describe("proxy matcher (CP-1)", () => {
+describe("proxy matcher", () => {
   it("matches every API route, whatever its last segment looks like", () => {
     expect(Array.isArray(config.matcher)).toBe(true);
     expect((config.matcher as string[])[0]).toBe("/api/:path*");
@@ -199,7 +199,7 @@ describe("proxy matcher (CP-1)", () => {
   });
 });
 
-describe("extension-suffixed API paths (CP-1)", () => {
+describe("extension-suffixed API paths", () => {
   beforeEach(() => vi.stubEnv("HINDSIGHT_CP_ACCESS_KEY", KEY));
   afterEach(() => vi.unstubAllEnvs());
 
@@ -224,7 +224,7 @@ describe("extension-suffixed API paths (CP-1)", () => {
   });
 });
 
-describe("public path boundaries (CP-8)", () => {
+describe("public path boundaries", () => {
   beforeEach(() => vi.stubEnv("HINDSIGHT_CP_ACCESS_KEY", KEY));
   afterEach(() => vi.unstubAllEnvs());
 
@@ -248,7 +248,7 @@ describe("public path boundaries (CP-8)", () => {
   });
 });
 
-describe("content security policy (CP-6)", () => {
+describe("content security policy", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it("sends a report-only policy with a fresh nonce per request", async () => {
@@ -260,8 +260,8 @@ describe("content security policy (CP-6)", () => {
     expect(csp).toMatch(/script-src 'self' 'nonce-[^']+'/);
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("frame-ancestors 'self'");
-    // Report-Only only: enforcing here would break the UI before the pass in the
-    // release checklist.
+    // Report-Only only: enforcing it would break the prerendered shells, which
+    // emit inline scripts without a nonce.
     expect(first.headers.get("content-security-policy")).toBeNull();
     expect(second.headers.get("content-security-policy-report-only")).not.toBe(csp);
   });

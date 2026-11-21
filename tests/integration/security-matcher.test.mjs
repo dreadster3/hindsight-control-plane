@@ -1,6 +1,6 @@
 // Proves Next applies the proxy matcher at runtime. The unit tests import the
-// exported `config` object, so a matcher that never runs (the F-06 bypass) is
-// invisible to them. Builds the app, starts `next start` on a loopback port with
+// exported `config` object, so a matcher that never runs for a path is invisible
+// to them. Builds the app, starts `next start` on a loopback port with
 // an access key set, and checks the gates over real HTTP. No deployment and no
 // dataplane: an anonymous /api/health reports "auth-required" without probing.
 //

@@ -29,7 +29,7 @@ function makeRequest(url: string): NextRequest {
 describe("GET /api/banks", () => {
   afterEach(() => vi.unstubAllEnvs());
 
-  it("refuses a caller with no session, even with the proxy out of the way (CP-2)", async () => {
+  it("refuses a caller with no session, even with the proxy out of the way", async () => {
     vi.stubEnv("HINDSIGHT_CP_ACCESS_KEY", "test-access-key");
     const res = await GET(makeRequest("http://localhost/api/banks"));
     expect(res.status).toBe(401);
