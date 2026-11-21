@@ -16,10 +16,18 @@ const MAX_BUCKETS = 10_000;
 
 export type RateLimitVerdict = { limited: false } | { limited: true; retryAfterSeconds: number };
 
-/** The caller's address as the ingress proxy saw it. */
+/**
+ * The caller's address as the ingress proxy saw it. Rightmost, because a single
+ * trusted ingress hop appends to a header the client controls — the leftmost
+ * entry is whatever the attacker sent, so keying on it gives a fresh bucket per
+ * guess.
+ */
 export function clientIp(request: NextRequest): string {
   const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
+  if (forwarded) {
+    const last = forwarded.split(",").pop()?.trim();
+    if (last) return last;
+  }
   return request.headers.get("x-real-ip")?.trim() || "unknown";
 }
 

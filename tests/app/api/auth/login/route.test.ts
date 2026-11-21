@@ -54,4 +54,14 @@ describe("POST /api/auth/login", () => {
     }
     expect((await login("10.0.0.5")).status).toBe(401);
   });
+
+  it("keys on the ingress-appended address, not a spoofed leftmost entry", async () => {
+    // A client can send any X-Forwarded-For it likes; the ingress appends the
+    // address it actually saw. Rotating the leftmost entry must not reset the
+    // bucket.
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      expect((await login(`10.9.9.${attempt}, 10.0.0.6`)).status).toBe(401);
+    }
+    expect((await login("10.9.9.99, 10.0.0.6")).status).toBe(429);
+  });
 });
