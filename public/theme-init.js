@@ -8,5 +8,7 @@
     var saved = localStorage.getItem('theme');
     var dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
     document.documentElement.classList.toggle('dark', dark);
-  } catch (e) {}
+  } catch {
+    /* Best effort: blocked storage must not stop the page. */
+  }
 })();
