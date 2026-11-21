@@ -106,10 +106,7 @@ describe("respondWithSdk", () => {
       expect(body).toEqual({
         error: "Failed to update bank config",
         details: "Invalid retain config",
-        upstream: {
-          status: HTTP_UPSTREAM_429,
-          detail: upstreamError,
-        },
+        upstream: { status: HTTP_UPSTREAM_429 },
       });
     });
 
@@ -120,7 +117,7 @@ describe("respondWithSdk", () => {
       );
       const body = await response.json();
       expect(body.details).toBeNull();
-      expect(body.upstream.detail).toBeNull();
+      expect(body.upstream).toEqual({ status: HTTP_UPSTREAM_503 });
     });
 
     it("logs the upstream status and error to console.error", () => {
@@ -160,7 +157,7 @@ describe("respondWithSdk", () => {
       const body = await response.json();
       expect(body.error).toBe("Failed to fetch");
       expect(body.details).toBeNull();
-      expect(body.upstream.detail).toBeNull();
+      expect(body.upstream).toEqual({ status: HTTP_UPSTREAM_503 });
     });
   });
 });
