@@ -1,3 +1,4 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
 import { sdk, lowLevelClientFor } from "@/lib/hindsight-client";
@@ -6,6 +7,9 @@ import { respondWithSdk } from "@/lib/sdk-response";
 import { readTagFilter } from "@/lib/tag-filter-params";
 
 export async function GET(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   const searchParams = request.nextUrl.searchParams;
   const bankId = searchParams.get("bank_id");

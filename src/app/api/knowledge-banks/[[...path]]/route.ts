@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { bodyTooLarge, limitedBodyStream, oversizedBody } from "@/lib/body-limit";
+import { requireSession } from "@/lib/auth/require-session";
 import { DATAPLANE_URL, getDataplaneHeaders } from "@/lib/hindsight-client";
 import { dataplaneToken } from "@/lib/auth/dataplane-token";
 import { parseByteRange } from "@/lib/byte-range";
+import { maxUploadBytes } from "@/lib/upload-limit";
 
 /**
  * Forwards everything under /api/knowledge-banks to the dataplane's
@@ -84,6 +87,9 @@ function copyHeaders(from: Headers): Headers {
 }
 
 async function forward(request: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   const { path = [] } = await params;
   const url = upstreamUrl(path, request.nextUrl.search);
@@ -92,6 +98,12 @@ async function forward(request: NextRequest, { params }: { params: Promise<{ pat
   }
 
   const hasBody = !["GET", "HEAD", "DELETE"].includes(request.method);
+  const bodyLimit = maxUploadBytes();
+  const tooLarge = oversizedBody(request, bodyLimit);
+  if (tooLarge) return tooLarge;
+  // Chunked uploads carry no Content-Length: count as they stream and cut the
+  // request off past the ceiling instead of forwarding an unbounded body.
+  const counted = limitedBodyStream(hasBody ? request.body : null, bodyLimit);
   const extra: Record<string, string> = {};
   const contentType = request.headers.get("content-type");
   if (hasBody && contentType) extra["Content-Type"] = contentType;
@@ -103,12 +115,14 @@ async function forward(request: NextRequest, { params }: { params: Promise<{ pat
     upstream = await fetch(url, {
       method: request.method,
       headers: getDataplaneHeaders(token, extra),
-      body: hasBody ? request.body : undefined,
+      body: counted.body,
       // Required by Node's fetch to send a streamed request body.
       ...(hasBody ? { duplex: "half" } : {}),
       cache: "no-store",
     } as RequestInit);
+    if (counted.exceeded()) return bodyTooLarge(bodyLimit);
   } catch (error) {
+    if (counted.exceeded()) return bodyTooLarge(bodyLimit);
     console.error("Knowledge bank proxy error:", error);
     return NextResponse.json(
       { error: "Failed to reach the Hindsight API", details: (error as Error).message },

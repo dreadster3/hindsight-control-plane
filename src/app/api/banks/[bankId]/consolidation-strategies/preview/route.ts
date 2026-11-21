@@ -1,3 +1,5 @@
+import { bodyTooLarge, jsonBodyLimit, readTextLimited } from "@/lib/body-limit";
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
 import { DATAPLANE_URL, getDataplaneHeaders } from "@/lib/hindsight-client";
@@ -9,6 +11,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const { bankId } = await params;
@@ -23,7 +28,13 @@ export async function POST(
       );
     }
 
-    const body = await request.text();
+    let body: string;
+    try {
+      body = await readTextLimited(request);
+    } catch (error) {
+      if (error instanceof RangeError) return bodyTooLarge(jsonBodyLimit());
+      throw error;
+    }
     const response = await fetch(
       `${DATAPLANE_URL}/v1/default/banks/${bankId}/consolidation-strategies/preview`,
       {

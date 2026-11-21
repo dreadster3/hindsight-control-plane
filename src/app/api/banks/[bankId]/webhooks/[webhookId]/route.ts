@@ -1,3 +1,5 @@
+import { readJsonBody } from "@/lib/body-limit";
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { dataplaneBankUrl, getDataplaneHeaders } from "@/lib/hindsight-client";
 import { dataplaneToken } from "@/lib/auth/dataplane-token";
@@ -7,9 +9,14 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string; webhookId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   const { bankId, webhookId } = await params;
-  const body = await request.json();
+  const parsedBody = await readJsonBody(request);
+  if (!parsedBody.ok) return parsedBody.response;
+  const body = parsedBody.body;
   const res = await fetch(dataplaneBankUrl(bankId, `/webhooks/${encodeURIComponent(webhookId)}`), {
     method: "PATCH",
     headers: getDataplaneHeaders(token, { "Content-Type": "application/json" }),
@@ -31,6 +38,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string; webhookId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   const { bankId, webhookId } = await params;
   const res = await fetch(dataplaneBankUrl(bankId, `/webhooks/${encodeURIComponent(webhookId)}`), {

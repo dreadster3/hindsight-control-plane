@@ -1,7 +1,10 @@
+import { oversizedBody } from "@/lib/body-limit";
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
 import { DATAPLANE_URL, dataplaneBankUrl, getDataplaneHeaders } from "@/lib/hindsight-client";
 import { dataplaneToken } from "@/lib/auth/dataplane-token";
+import { maxUploadBytes } from "@/lib/upload-limit";
 
 // The dataplane export is asynchronous (a large whole-bank export can pin the API,
 // so the synchronous endpoint was removed). We hide that from the browser: submit
@@ -16,6 +19,9 @@ const EXPORT_TIMEOUT_MS = 5 * 60 * 1000;
  * the binary zip back to the browser.
  */
 export async function GET(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -147,6 +153,9 @@ export async function GET(request: NextRequest) {
  * Proxies the multipart upload to POST /v1/default/banks/{bank_id}/transfer/import (mode=merge).
  */
 export async function POST(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -162,6 +171,10 @@ export async function POST(request: NextRequest) {
     }
     const onConflict = searchParams.get("on_conflict") || "skip";
 
+    // Upload route: the ceiling stays HINDSIGHT_CP_MAX_UPLOAD_SIZE, not the
+    // smaller JSON cap. formData() buffers, so refuse a declared oversize first.
+    const tooLarge = oversizedBody(request, maxUploadBytes());
+    if (tooLarge) return tooLarge;
     const inForm = await request.formData();
     const file = inForm.get("file");
     if (!(file instanceof Blob)) {
