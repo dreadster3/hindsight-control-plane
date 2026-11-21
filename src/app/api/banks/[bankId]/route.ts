@@ -1,3 +1,5 @@
+import { readJsonBody } from "@/lib/body-limit";
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
 import { sdk, lowLevelClientFor } from "@/lib/hindsight-client";
@@ -8,20 +10,14 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   const { bankId } = await params;
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json(
-      localizeApiErrorPayload(request, {
-        error: "Invalid JSON body",
-        errorKey: "api.errors.auth.invalidRequestBody",
-      }),
-      { status: 400 }
-    );
-  }
+  const parsedBody = await readJsonBody(request);
+  if (!parsedBody.ok) return parsedBody.response;
+  const body = parsedBody.body;
 
   if (!bankId) {
     return NextResponse.json(
@@ -49,20 +45,14 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   const { bankId } = await params;
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json(
-      localizeApiErrorPayload(request, {
-        error: "Invalid JSON body",
-        errorKey: "api.errors.auth.invalidRequestBody",
-      }),
-      { status: 400 }
-    );
-  }
+  const parsedBody = await readJsonBody(request);
+  if (!parsedBody.ok) return parsedBody.response;
+  const body = parsedBody.body;
 
   if (!bankId) {
     return NextResponse.json(
@@ -90,6 +80,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   const { bankId } = await params;
 

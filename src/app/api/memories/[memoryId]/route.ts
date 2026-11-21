@@ -1,3 +1,5 @@
+import { readJsonBody } from "@/lib/body-limit";
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
 import { dataplaneBankUrl, getDataplaneHeaders } from "@/lib/hindsight-client";
@@ -7,6 +9,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ memoryId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const { memoryId } = await params;
@@ -62,10 +67,15 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ memoryId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const { memoryId } = await params;
-    const body = await request.json();
+    const parsedBody = await readJsonBody(request);
+    if (!parsedBody.ok) return parsedBody.response;
+    const body = parsedBody.body;
     const bankId = body.bank_id || request.nextUrl.searchParams.get("bank_id");
 
     if (!bankId) {

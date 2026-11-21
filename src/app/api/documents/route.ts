@@ -1,3 +1,5 @@
+import { readJsonBody } from "@/lib/body-limit";
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { localizeApiErrorPayload, missingQueryParam } from "@/lib/i18n/api-errors";
 import {
@@ -19,6 +21,9 @@ type TagsMatch = "any" | "all" | "any_strict" | "all_strict" | "exact";
 const TIME_FIELDS = new Set<string>(["created_at", "updated_at"]);
 
 export async function GET(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   const searchParams = request.nextUrl.searchParams;
   const bankId = searchParams.get("bank_id");
@@ -76,6 +81,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   const searchParams = request.nextUrl.searchParams;
   const bankId = searchParams.get("bank_id");
@@ -85,7 +93,9 @@ export async function PATCH(request: NextRequest) {
   if (!documentId) return missingQueryParam(request, "document_id");
 
   try {
-    const body = await request.json();
+    const parsedBody = await readJsonBody(request);
+    if (!parsedBody.ok) return parsedBody.response;
+    const body = parsedBody.body;
     const response = await fetch(
       dataplaneBankUrl(bankId, `/documents/${encodeURIComponent(documentId)}`),
       {
@@ -115,6 +125,9 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   const searchParams = request.nextUrl.searchParams;
   const bankId = searchParams.get("bank_id");

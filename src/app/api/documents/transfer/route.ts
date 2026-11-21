@@ -1,3 +1,5 @@
+import { readFormDataLimited } from "@/lib/body-limit";
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
 import { DATAPLANE_URL, dataplaneBankUrl, getDataplaneHeaders } from "@/lib/hindsight-client";
@@ -16,6 +18,9 @@ const EXPORT_TIMEOUT_MS = 5 * 60 * 1000;
  * the binary zip back to the browser.
  */
 export async function GET(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -147,6 +152,9 @@ export async function GET(request: NextRequest) {
  * Proxies the multipart upload to POST /v1/default/banks/{bank_id}/transfer/import (mode=merge).
  */
 export async function POST(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -162,7 +170,12 @@ export async function POST(request: NextRequest) {
     }
     const onConflict = searchParams.get("on_conflict") || "skip";
 
-    const inForm = await request.formData();
+    // Upload route: the ceiling stays HINDSIGHT_CP_MAX_UPLOAD_SIZE, not the
+    // smaller JSON cap. The body is counted as formData() parses it, so a
+    // chunked upload cannot slip past a Content-Length check and buffer whole.
+    const upload = await readFormDataLimited(request);
+    if (!upload.ok) return upload.response;
+    const inForm = upload.form;
     const file = inForm.get("file");
     if (!(file instanceof Blob)) {
       return NextResponse.json(

@@ -1,4 +1,6 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
+import { readJsonBody } from "@/lib/body-limit";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
 import { dataplaneBankUrl, getDataplaneHeaders } from "@/lib/hindsight-client";
 import { dataplaneToken } from "@/lib/auth/dataplane-token";
@@ -7,6 +9,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string; mentalModelId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const { bankId, mentalModelId } = await params;
@@ -23,7 +28,9 @@ export async function POST(
 
     // Optional body: { mode: "full" } for a one-off full refresh. A bodiless POST
     // (every caller before it existed) still refreshes in the model's own mode.
-    const body = await request.json().catch(() => null);
+    const parsedBody = await readJsonBody<{ mode?: string }>(request);
+    if (!parsedBody.ok && parsedBody.tooLarge) return parsedBody.response;
+    const body = parsedBody.ok ? parsedBody.body : null;
     const mode = body?.mode === "full" ? "full" : undefined;
     const response = await fetch(
       dataplaneBankUrl(bankId, `/mental-models/${encodeURIComponent(mentalModelId)}/refresh`),

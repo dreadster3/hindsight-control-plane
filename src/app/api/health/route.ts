@@ -4,6 +4,7 @@ import { createClient, createConfig, sdk } from "@vectorize-io/hindsight-client"
 import { getDataplaneHeaders } from "@/lib/hindsight-client";
 import { dataplaneToken } from "@/lib/auth/dataplane-token";
 import { isOidcEnabled } from "@/lib/auth/oidc-config";
+import { requireSession } from "@/lib/auth/require-session";
 
 const HEALTH_CHECK_TIMEOUT_MS = 3000;
 
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
     service: string;
     dataplane?: {
       status: string;
-      url: string;
+      url?: string;
       error?: string;
     };
   } = {
@@ -21,13 +22,25 @@ export async function GET(request: NextRequest) {
     service: "hindsight-control-plane",
   };
 
+  // Monitoring probes rely on this endpoint being public, but the dataplane
+  // hostname/port and error text are internal topology: anonymous callers only
+  // learn whether they need a session. The dashboard is authenticated, so its
+  // response is unchanged.
+  const denied = await requireSession(request);
+  if (denied) {
+    return NextResponse.json(
+      { ...status, dataplane: { status: "auth-required" } },
+      { status: 200 }
+    );
+  }
+
   // Check dataplane connectivity with a short timeout
   const dataplaneUrl = process.env.HINDSIGHT_CP_DATAPLANE_API_URL || "http://localhost:8888";
   const token = await dataplaneToken(request);
   if (isOidcEnabled() && token === null) {
-    // Public endpoint, but the probe needs a user session in OIDC mode.
-    // Report that honestly instead of probing unauthenticated and calling a
-    // 401 "disconnected".
+    // Sessioned caller whose token could not be read (e.g. refresh failed and
+    // the cookie was cleared). Report that honestly instead of probing
+    // unauthenticated and calling a 401 "disconnected".
     return NextResponse.json(
       { ...status, dataplane: { status: "auth-required", url: dataplaneUrl } },
       { status: 200 }

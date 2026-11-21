@@ -2092,7 +2092,8 @@
         "accessKeyNotConfigured": "Access key not configured",
         "invalidRequestBody": "Invalid request body",
         "invalidAccessKey": "Invalid access key",
-        "unauthorized": "Unauthorized"
+        "unauthorized": "Unauthorized",
+        "tooManyAttempts": "Too many attempts. Try again later."
       },
       "validation": {
         "bankIdRequired": "bank_id is required",

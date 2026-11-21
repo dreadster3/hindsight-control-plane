@@ -1,13 +1,22 @@
+import { readFormDataLimited } from "@/lib/body-limit";
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
 import { dataplaneBankUrl, getDataplaneHeaders } from "@/lib/hindsight-client";
 import { dataplaneToken } from "@/lib/auth/dataplane-token";
 
 export async function POST(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
-    // Clone the form data to read bank_id without consuming it
-    const formData = await request.formData();
+    // Upload route: the ceiling stays HINDSIGHT_CP_MAX_UPLOAD_SIZE, not the
+    // smaller JSON cap. The body is counted as formData() parses it, so a
+    // chunked upload cannot slip past a Content-Length check and buffer whole.
+    const upload = await readFormDataLimited(request);
+    if (!upload.ok) return upload.response;
+    const formData = upload.form;
 
     // Extract bank_id from request JSON
     const requestJson = formData.get("request");

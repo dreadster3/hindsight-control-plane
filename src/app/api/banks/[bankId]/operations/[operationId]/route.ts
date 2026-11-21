@@ -1,3 +1,4 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
 import {
@@ -13,6 +14,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string; operationId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   const { bankId, operationId } = await params;
 
@@ -51,6 +55,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string; operationId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const { bankId, operationId } = await params;
@@ -110,6 +117,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string; operationId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const { bankId, operationId } = await params;

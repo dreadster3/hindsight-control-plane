@@ -2092,7 +2092,8 @@
         "accessKeyNotConfigured": "액세스 키가 구성되지 않았습니다",
         "invalidRequestBody": "요청 본문이 유효하지 않습니다",
         "invalidAccessKey": "액세스 키가 유효하지 않습니다",
-        "unauthorized": "인증되지 않았습니다"
+        "unauthorized": "인증되지 않았습니다",
+        "tooManyAttempts": "시도 횟수가 너무 많습니다. 잠시 후 다시 시도해 주세요."
       },
       "validation": {
         "bankIdRequired": "bank_id는 필수입니다",

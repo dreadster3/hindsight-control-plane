@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type ListDocumentsArg = { query: Record<string, unknown> };
@@ -126,10 +126,12 @@ describe("single-document operations on /api/documents", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await PATCH({
-      nextUrl: new URL(`http://localhost/api/documents?bank_id=b1&document_id=${encoded}`),
-      json: async () => ({ tags: ["a"] }),
-    } as unknown as NextRequest);
+    await PATCH(
+      new NextRequest(`http://localhost/api/documents?bank_id=b1&document_id=${encoded}`, {
+        method: "PATCH",
+        body: JSON.stringify({ tags: ["a"] }),
+      })
+    );
 
     expect(fetchMock.mock.calls[0][0]).toBe(`http://dataplane/b1/documents/${encoded}`);
   });

@@ -1,3 +1,5 @@
+import { readJsonBody } from "@/lib/body-limit";
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { dataplaneBankUrl, getDataplaneHeaders } from "@/lib/hindsight-client";
 import { dataplaneToken } from "@/lib/auth/dataplane-token";
@@ -7,6 +9,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   const { bankId } = await params;
   const { searchParams } = new URL(request.url);
@@ -35,9 +40,14 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ bankId: string }> }
 ) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   const { bankId } = await params;
-  const body = await request.json();
+  const parsedBody = await readJsonBody(request);
+  if (!parsedBody.ok) return parsedBody.response;
+  const body = parsedBody.body;
   const res = await fetch(dataplaneBankUrl(bankId, "/webhooks"), {
     method: "POST",
     headers: getDataplaneHeaders(token, { "Content-Type": "application/json" }),

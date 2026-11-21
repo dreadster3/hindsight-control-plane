@@ -18,6 +18,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:integration": "node --test tests/integration/security-matcher.test.mjs",
     "test:watch": "vitest",
     "i18n:check": "tsx scripts/find-untranslated.ts",
     "prepublishOnly": "npm run build"

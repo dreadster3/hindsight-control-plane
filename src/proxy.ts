@@ -9,10 +9,11 @@ import { sanitizeReturnTo, stripBasePath, withBasePath } from "@/lib/base-path";
 import { routing } from "@/i18n/routing";
 import { maxUploadBytes } from "@/lib/upload-limit";
 
-// Routes that don't require authentication
+// Routes that don't require authentication. Matched on path boundaries (see
+// isPublicPath): a bare startsWith would also make "/api/healthz" public.
 const PUBLIC_PATTERNS = [
   "/login",
-  "/api/auth/",
+  "/api/auth",
   "/api/health",
   "/api/version",
   "/logo.png",
@@ -23,6 +24,13 @@ const PUBLIC_PATTERNS = [
 ];
 
 const intlMiddleware = createIntlMiddleware(routing);
+
+/** Public only on an exact match or a "/"-separated child of the pattern. */
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATTERNS.some(
+    (pattern) => pathname === pattern || pathname.startsWith(`${pattern}/`)
+  );
+}
 
 // next-intl rewrites /login → /en/login internally (localePrefix "never") and
 // the proxy re-runs on the rewritten path. Auth checks must see the canonical
@@ -46,7 +54,51 @@ async function hasValidSession(request: NextRequest, accessKey: string | undefin
   return verifySessionToken(request.cookies.get(ACCESS_KEY_COOKIE)?.value, accessKey);
 }
 
+/**
+ * Nonce-based CSP. Shipped Report-Only: the UI pass in the release checklist
+ * enforces it once no violations are left. Next.js picks the nonce up from the
+ * request's Content-Security-Policy header and stamps its inline bootstrap
+ * scripts with it. style-src keeps 'unsafe-inline' and no nonce (a nonce there
+ * would cancel 'unsafe-inline'), because React and Radix emit style attributes.
+ *
+ * Enforcing this will break the UI until the prerendered pages are handled: the
+ * static shells of /dashboard and friends emit inline RSC scripts with no nonce.
+ * Opt those routes into dynamic rendering (connection() / force-dynamic) or move
+ * to SRI/hashes first — see pentest handoff §5.
+ */
+function contentSecurityPolicy(nonce: string): string {
+  const isDev = process.env.NODE_ENV === "development";
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}'${isDev ? " 'unsafe-eval'" : ""}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "frame-ancestors 'self'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
+  ].join("; ");
+}
+
+/** NextResponse.next() that hands the nonce and policy to the render. */
+function passThrough(request: NextRequest, nonce: string, csp: string): NextResponse {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", csp);
+  return NextResponse.next({ request: { headers: requestHeaders } });
+}
+
 export async function proxy(request: NextRequest) {
+  const nonce = btoa(crypto.randomUUID());
+  const csp = contentSecurityPolicy(nonce);
+  const response = await handleRequest(request, nonce, csp);
+  response.headers.set("Content-Security-Policy-Report-Only", csp);
+  return response;
+}
+
+async function handleRequest(request: NextRequest, nonce: string, csp: string) {
   const accessKey = process.env.HINDSIGHT_CP_ACCESS_KEY;
   const authEnabled = Boolean(accessKey) || isOidcEnabled();
   const { pathname } = request.nextUrl;
@@ -74,12 +126,11 @@ export async function proxy(request: NextRequest) {
       );
     }
     if (!authEnabled) {
-      return NextResponse.next();
+      return passThrough(request, nonce, csp);
     }
 
-    const isPublic = PUBLIC_PATTERNS.some((pattern) => appPathname.startsWith(pattern));
-    if (isPublic) {
-      return NextResponse.next();
+    if (isPublicPath(appPathname)) {
+      return passThrough(request, nonce, csp);
     }
 
     const isAuthenticated = await hasValidSession(request, accessKey);
@@ -97,17 +148,16 @@ export async function proxy(request: NextRequest) {
       );
     }
 
-    return NextResponse.next();
+    return passThrough(request, nonce, csp);
   }
 
   // Page routes: enforce auth first, then delegate to the i18n middleware for
   // locale negotiation and rewriting. With localePrefix "never" the locale is
   // never in the path, so appPathname is already the canonical route.
   if (authEnabled) {
-    const isPublic = PUBLIC_PATTERNS.some((pattern) => appPathname.startsWith(pattern));
     const isLogin = appPathname === "/login";
 
-    if (!isPublic || isLogin) {
+    if (!isPublicPath(appPathname) || isLogin) {
       const isAuthenticated = await hasValidSession(request, accessKey);
 
       if (isLogin) {
@@ -130,16 +180,19 @@ export async function proxy(request: NextRequest) {
   // Already locale-rewritten by a previous proxy pass: render, don't re-run
   // next-intl (with localePrefix "never" it redirects prefixed paths back).
   if (localePrefix) {
-    return NextResponse.next();
+    return passThrough(request, nonce, csp);
   }
   return intlMiddleware(request);
 }
 
 export const config = {
-  // Match all paths except Next.js internals and static assets.
-  // - Use an explicit file extension allowlist instead of .*\..* so that
-  //   dynamic segments containing dots (e.g. bank IDs like
-  //   "SX.Products.GovComply.Build") still get the i18n locale rewrite.
-  matcher:
-    "/((?!_next|_vercel|.*\\.(?:png|jpe?g|gif|svg|webp|ico|css|js|map|woff2?|ttf|eot|txt|xml|json)$).*)",
+  matcher: [
+    // Every API route, whatever its last segment looks like: a bank id or alias
+    // may end in ".json" or ".js" and must not skip the access check.
+    "/api/:path*",
+    // Pages, minus Next.js internals and root-level static assets. Only the
+    // root-level form is excluded so dynamic segments containing dots (e.g.
+    // bank IDs like "SX.Products.GovComply.Build") still get the i18n rewrite.
+    "/((?!_next|_vercel|img/|fonts/|[^/]+\\.(?:png|jpe?g|gif|svg|webp|ico|css|js|map|woff2?|ttf|eot|txt|xml|json)$).*)",
+  ],
 };

@@ -1,3 +1,4 @@
+import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
 import { hindsightClientFor } from "@/lib/hindsight-client";
@@ -15,6 +16,9 @@ const TIME_FIELDS = new Set<string>([
 ]);
 
 export async function GET(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   const token = await dataplaneToken(request);
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -88,6 +92,9 @@ export async function GET(request: NextRequest) {
 // Note: Individual memory unit deletion is not yet supported by the API
 // Use clearBankMemories to delete all memories for a bank instead
 export async function DELETE(request: NextRequest) {
+  const denied = await requireSession(request);
+  if (denied) return denied;
+
   return NextResponse.json(
     localizeApiErrorPayload(request, {
       error:
