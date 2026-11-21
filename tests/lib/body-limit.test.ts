@@ -5,6 +5,7 @@ import {
   jsonBodyLimit,
   limitedBodyStream,
   oversizedBody,
+  readFormDataLimited,
   readJsonBody,
   readJsonLimited,
 } from "@/lib/body-limit";
@@ -20,7 +21,7 @@ function jsonRequest(body: unknown, headers: Record<string, string> = {}): NextR
 }
 
 /** A stream body with no Content-Length — the chunked case the proxy is blind to. */
-function chunkedRequest(chunks: string[]) {
+function chunkedRequest(chunks: string[], headers: Record<string, string> = {}) {
   let pulled = 0;
   let cancelled = false;
   const stream = new ReadableStream<Uint8Array>({
@@ -39,6 +40,7 @@ function chunkedRequest(chunks: string[]) {
   });
   const init = {
     method: "POST",
+    headers,
     body: stream,
     // Node's fetch requires this for a streamed request body.
     duplex: "half",
@@ -133,5 +135,57 @@ describe("limitedBodyStream", () => {
     );
     await expect(new Response(body).text()).rejects.toBeTruthy();
     expect(exceeded()).toBe(true);
+  });
+});
+
+describe("readFormDataLimited (MAJOR-2)", () => {
+  const boundary = "----hindsight-test";
+
+  it("parses a multipart body under the limit", async () => {
+    const body = `--${boundary}\r\nContent-Disposition: form-data; name="request"\r\n\r\n{"bank_id":"b"}\r\n--${boundary}--\r\n`;
+    const { request } = chunkedRequest([body], {
+      "content-type": `multipart/form-data; boundary=${boundary}`,
+    });
+
+    const upload = await readFormDataLimited(request, 4096);
+
+    expect(upload.ok).toBe(true);
+    if (!upload.ok) return;
+    expect(upload.form.get("request")).toBe('{"bank_id":"b"}');
+  });
+
+  it("aborts a chunked multipart body past the limit instead of parsing it whole", async () => {
+    const field = "x".repeat(400);
+    const body = `--${boundary}\r\nContent-Disposition: form-data; name="request"\r\n\r\n${field}\r\n--${boundary}--\r\n`;
+    const chunks = body.match(/[\s\S]{1,50}/g);
+    if (!chunks) throw new Error("no chunks");
+    const { request, pulled, cancelled } = chunkedRequest(chunks, {
+      "content-type": `multipart/form-data; boundary=${boundary}`,
+    });
+
+    const upload = await readFormDataLimited(request, 80);
+
+    expect(upload.ok).toBe(false);
+    if (upload.ok) return;
+    expect(upload.response.status).toBe(413);
+    // No Content-Length was present, so this only passes because the stream was
+    // counted: it stopped reading and cancelled the source, never parsing the
+    // body as a whole.
+    expect(cancelled()).toBe(true);
+    expect(pulled()).toBeLessThan(chunks.length);
+  });
+
+  it("still refuses a declared oversize before reading anything", async () => {
+    const request = new NextRequest("http://localhost/api/files/retain", {
+      method: "POST",
+      headers: { "content-length": String(2 * 1024 * 1024) },
+    });
+    vi.stubEnv("HINDSIGHT_CP_MAX_UPLOAD_SIZE", "1mb");
+
+    const upload = await readFormDataLimited(request);
+
+    expect(upload.ok).toBe(false);
+    if (upload.ok) return;
+    expect(upload.response.status).toBe(413);
   });
 });

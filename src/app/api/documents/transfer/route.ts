@@ -1,10 +1,9 @@
-import { oversizedBody } from "@/lib/body-limit";
+import { readFormDataLimited } from "@/lib/body-limit";
 import { requireSession } from "@/lib/auth/require-session";
 import { NextRequest, NextResponse } from "next/server";
 import { localizeApiErrorPayload } from "@/lib/i18n/api-errors";
 import { DATAPLANE_URL, dataplaneBankUrl, getDataplaneHeaders } from "@/lib/hindsight-client";
 import { dataplaneToken } from "@/lib/auth/dataplane-token";
-import { maxUploadBytes } from "@/lib/upload-limit";
 
 // The dataplane export is asynchronous (a large whole-bank export can pin the API,
 // so the synchronous endpoint was removed). We hide that from the browser: submit
@@ -172,10 +171,11 @@ export async function POST(request: NextRequest) {
     const onConflict = searchParams.get("on_conflict") || "skip";
 
     // Upload route: the ceiling stays HINDSIGHT_CP_MAX_UPLOAD_SIZE, not the
-    // smaller JSON cap. formData() buffers, so refuse a declared oversize first.
-    const tooLarge = oversizedBody(request, maxUploadBytes());
-    if (tooLarge) return tooLarge;
-    const inForm = await request.formData();
+    // smaller JSON cap. The body is counted as formData() parses it, so a
+    // chunked upload cannot slip past a Content-Length check and buffer whole.
+    const upload = await readFormDataLimited(request);
+    if (!upload.ok) return upload.response;
+    const inForm = upload.form;
     const file = inForm.get("file");
     if (!(file instanceof Blob)) {
       return NextResponse.json(

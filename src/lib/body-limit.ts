@@ -120,20 +120,65 @@ export function limitedBodyStream(
   limit = maxUploadBytes()
 ): { body: ReadableStream<Uint8Array> | null; exceeded: () => boolean } {
   if (!body) return { body: null, exceeded: () => false };
+  // Pumped by hand rather than pipeThrough: on a refused chunk this must cancel
+  // the source reader, or the sender keeps streaming into a body nobody reads.
+  const reader = body.getReader();
   let total = 0;
   let exceeded = false;
-  const stream = body.pipeThrough(
-    new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        total += chunk.byteLength;
-        if (total > limit) {
-          exceeded = true;
-          controller.error(new RangeError("Request too large"));
-          return;
-        }
-        controller.enqueue(chunk);
-      },
-    })
-  );
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        controller.close();
+        return;
+      }
+      total += value.byteLength;
+      if (total > limit) {
+        exceeded = true;
+        await reader.cancel().catch(() => undefined);
+        controller.error(new RangeError("Request too large"));
+        return;
+      }
+      controller.enqueue(value);
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
   return { body: stream, exceeded: () => exceeded };
+}
+
+export type FormDataResult =
+  | { ok: true; form: FormData }
+  | { ok: false; response: NextResponse };
+
+/**
+ * Multipart upload without the buffering bypass: the body is counted as
+ * formData() consumes it, so a chunked upload (no Content-Length to check)
+ * is still cut off at the ceiling instead of being parsed whole.
+ */
+export async function readFormDataLimited(
+  request: NextRequest,
+  limit = maxUploadBytes()
+): Promise<FormDataResult> {
+  const tooLarge = oversizedBody(request, limit);
+  if (tooLarge) return { ok: false, response: tooLarge };
+
+  const counted = limitedBodyStream(request.body, limit);
+  const headers = new Headers(request.headers);
+  // The streamed copy has no declared length; a stale one would only lie to undici.
+  headers.delete("content-length");
+  try {
+    const streamed = new Request(request.url, {
+      method: request.method,
+      headers,
+      body: counted.body,
+      // Required by Node's fetch to read a streamed request body.
+      duplex: "half",
+    } as RequestInit);
+    return { ok: true, form: await streamed.formData() };
+  } catch (error) {
+    if (counted.exceeded()) return { ok: false, response: bodyTooLarge(limit) };
+    throw error;
+  }
 }
