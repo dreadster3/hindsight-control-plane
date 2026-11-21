@@ -56,11 +56,13 @@ test("proxy gates extension-suffixed api paths over real http", { timeout: 900_0
   const port = await freePort();
   const distDir = path.join(ROOT, `.next-${port}`);
   const env = {
-    ...process.env,
+    // Drop ambient OIDC config so the run is deterministically in access-key
+    // mode: any AUTH_* trio would flip isOidcEnabled() and the gates would 401
+    // for a different reason.
+    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("AUTH_"))),
     NODE_ENV: "production",
     NEXT_TELEMETRY_DISABLED: "1",
-    // A key is what makes the gate exist at all (no key = open mode), and no
-    // OIDC env keeps the server in access-key mode.
+    // A key is what makes the gate exist at all (no key = open mode).
     HINDSIGHT_CP_ACCESS_KEY: "integration-test-access-key",
     HINDSIGHT_CP_PORT: String(port),
   };
@@ -104,6 +106,12 @@ test("proxy gates extension-suffixed api paths over real http", { timeout: 900_0
       });
       assert.equal(res.status, 401, `${method} ${pathname} must be gated`);
       assert.equal(res.headers.get("x-hindsight-session-required"), "1", `${pathname} header`);
+      // A handler-401 is byte-identical, so require the proxy's own stamp: only
+      // proxy() adds the CSP header, and only proxy() proves the matcher ran.
+      assert.ok(
+        res.headers.get("content-security-policy-report-only"),
+        `${method} ${pathname} must be answered by the proxy, not a handler`
+      );
     }
 
     // 6-7: the public probe says a session is needed and leaks no topology.
