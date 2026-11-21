@@ -60,6 +60,11 @@ async function hasValidSession(request: NextRequest, accessKey: string | undefin
  * request's Content-Security-Policy header and stamps its inline bootstrap
  * scripts with it. style-src keeps 'unsafe-inline' and no nonce (a nonce there
  * would cancel 'unsafe-inline'), because React and Radix emit style attributes.
+ *
+ * Enforcing this will break the UI until the prerendered pages are handled: the
+ * static shells of /dashboard and friends emit inline RSC scripts with no nonce.
+ * Opt those routes into dynamic rendering (connection() / force-dynamic) or move
+ * to SRI/hashes first — see pentest handoff §5.
  */
 function contentSecurityPolicy(nonce: string): string {
   const isDev = process.env.NODE_ENV === "development";

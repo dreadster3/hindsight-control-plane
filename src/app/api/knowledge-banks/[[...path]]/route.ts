@@ -103,6 +103,11 @@ async function forward(request: NextRequest, { params }: { params: Promise<{ pat
   if (tooLarge) return tooLarge;
   // Chunked uploads carry no Content-Length: count as they stream and cut the
   // request off past the ceiling instead of forwarding an unbounded body.
+  // shortcut: through the deployed proxy, Next's Node-proxy clone buffers and
+  // truncates a chunked body at proxyClientMaxBodySize (100 MB) before this
+  // handler, so beyond that it is a truncated forward rather than a 413 — still
+  // bounded, but size the pod for the clone it makes; enforce at the edge if
+  // that matters.
   const counted = limitedBodyStream(hasBody ? request.body : null, bodyLimit);
   const extra: Record<string, string> = {};
   const contentType = request.headers.get("content-type");

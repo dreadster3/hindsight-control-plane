@@ -141,7 +141,13 @@ Vendored from the upstream monorepo so this repo stands alone:
 - A CSP is sent `Content-Security-Policy-Report-Only` with a per-request nonce
   (`src/proxy.ts`); enforcement follows once the UI flows report no violations.
   The theme bootstrap is a static file (`public/theme-init.js`), not an inline
-  script.
+  script. Enforcement also needs the prerendered routes (`/[locale]/dashboard`,
+  banks) made dynamic or hashed: their static shell emits inline RSC scripts
+  with no nonce.
+- Upload bodies are counted in the handlers, but through the deployed proxy
+  Next.js clones the request and truncates a chunked body at
+  `proxyClientMaxBodySize` (100 MB) before the handler runs — size the pod for
+  that clone, and enforce a hard ceiling at the edge.
 - Refresh is serialized per session (in-process lock) and settled results are
   cached briefly for requests still carrying the pre-rotation cookie. Authentik
   rotates refresh tokens, so concurrent refreshes with the same token would be
