@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0](https://github.com/dreadster3/hindsight-control-plane/compare/v0.1.2...v0.2.0) (2026-11-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **security:** pentest hardening ([#23](https://github.com/dreadster3/hindsight-control-plane/issues/23))
+
+### Bug Fixes
+
+* **security:** pentest hardening ([#23](https://github.com/dreadster3/hindsight-control-plane/issues/23)) ([0be249d](https://github.com/dreadster3/hindsight-control-plane/commit/0be249d818d1397983dfe453336a3a240af647f9))
+
 ## [0.1.2](https://github.com/dreadster3/hindsight-control-plane/compare/v0.1.1...v0.1.2) (2026-11-19)
 
 
