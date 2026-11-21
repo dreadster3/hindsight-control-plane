@@ -20,4 +20,10 @@ export async function register() {
   } else {
     console.log("[Control Plane] No API key configured (public access)");
   }
+
+  // The dataplane credential above is not the UI gate: say which one the proxy
+  // and the API handlers actually enforce. Access-key mode shares one dataplane
+  // key across every caller, so a gate bypass there is full data exposure.
+  const gate = oidc ? "OIDC" : process.env.HINDSIGHT_CP_ACCESS_KEY ? "access key" : "none (open)";
+  console.log(`[Control Plane] UI auth mode: ${gate}`);
 }
