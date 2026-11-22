@@ -266,3 +266,40 @@ describe("content security policy", () => {
     expect(second.headers.get("content-security-policy-report-only")).not.toBe(csp);
   });
 });
+
+// Function-level gate: the proxy answers 405 for any method outside its list.
+// Next/undici reject TRACE and TRACK before proxy() is even called, so those two
+// are covered here as the contract, not as live reachability.
+describe("proxy method gate", () => {
+  beforeEach(() => vi.stubEnv("HINDSIGHT_CP_ACCESS_KEY", KEY));
+  afterEach(() => vi.unstubAllEnvs());
+
+  // NextRequest's constructor refuses TRACE/TRACK (undici treats them as forbidden
+  // methods), so stamp a method onto a real request — this is the gate's input, not
+  // a claim that such a request reaches the proxy in production.
+  const call = (method: string, path = "/api/health") => {
+    const req = new NextRequest(new URL(path, "http://localhost:9999"));
+    Object.defineProperty(req, "method", { value: method });
+    return proxy(req);
+  };
+
+  for (const method of ["PROPFIND", "MKCOL", "TRACE", "TRACK"]) {
+    it(`rejects ${method} with 405 and an Allow list`, async () => {
+      const res = await call(method);
+      expect(res.status).toBe(405);
+      expect(res.headers.get("allow")).toBe("GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS");
+      expect(await res.text()).toBe("");
+    });
+  }
+
+  it("leaves the allowed methods on their normal path", async () => {
+    for (const method of ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
+      expect((await call(method)).status, method).toBe(200);
+      expect((await call(method, "/api/banks")).status, method).toBe(401);
+    }
+  });
+
+  it("rejects an unsupported method on a page path too", async () => {
+    expect((await call("PROPFIND", "/login")).status).toBe(405);
+  });
+});

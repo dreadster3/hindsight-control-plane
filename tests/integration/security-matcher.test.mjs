@@ -127,6 +127,17 @@ test("proxy gates extension-suffixed api paths over real http", { timeout: 900_0
     const csp = login.headers.get("content-security-policy-report-only");
     assert.match(csp ?? "", /script-src 'self' 'nonce-[^']+'/, "login must carry the nonce CSP");
     assert.equal(login.headers.get("content-security-policy"), null, "CSP must not be enforced yet");
+    // 9-10: methods Next has no handler for are refused by the proxy's gate with a
+    // clean 405 + Allow, instead of falling through to Next's error response.
+    const propfind = await fetch(`${base}/api/health`, { method: "PROPFIND" });
+    assert.equal(propfind.status, 405, "PROPFIND must be refused by the proxy");
+    assert.match(
+      propfind.headers.get("allow") ?? "",
+      /GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS/,
+      "405 must list the allowed methods"
+    );
+    const options = await fetch(`${base}/api/health`, { method: "OPTIONS" });
+    assert.equal(options.status, 204, "OPTIONS preflight stays allowed");
   } finally {
     await stop(server);
     rmSync(distDir, { recursive: true, force: true });
