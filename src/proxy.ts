@@ -23,6 +23,16 @@ const PUBLIC_PATTERNS = [
   "/static",
 ];
 
+// Methods the app answers. Anything else (PROPFIND, MKCOL, …) would reach Next's
+// render pipeline and come back as an unhandled 500, so refuse it up front.
+// OPTIONS stays allowed: Next answers preflight itself (204).
+// TRACE/TRACK cannot be caught here: Next builds its NextRequest with undici
+// before calling proxy(), and undici rejects those two methods outright, so they
+// fail earlier (still a 500/400). Clean 405s for them need the ingress.
+const ALLOWED_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
+const ALLOWED_METHOD_SET = new Set(ALLOWED_METHODS);
+const ALLOW_HEADER = ALLOWED_METHODS.join(", ");
+
 const intlMiddleware = createIntlMiddleware(routing);
 
 /** Public only on an exact match or a "/"-separated child of the pattern. */
@@ -91,6 +101,10 @@ function passThrough(request: NextRequest, nonce: string, csp: string): NextResp
 }
 
 export async function proxy(request: NextRequest) {
+  if (!ALLOWED_METHOD_SET.has(request.method)) {
+    return new NextResponse(null, { status: 405, headers: { Allow: ALLOW_HEADER } });
+  }
+
   const nonce = btoa(crypto.randomUUID());
   const csp = contentSecurityPolicy(nonce);
   const response = await handleRequest(request, nonce, csp);
