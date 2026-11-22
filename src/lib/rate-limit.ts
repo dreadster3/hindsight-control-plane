@@ -17,12 +17,20 @@ const MAX_BUCKETS = 10_000;
 export type RateLimitVerdict = { limited: false } | { limited: true; retryAfterSeconds: number };
 
 /**
- * The caller's address as the ingress proxy saw it. Rightmost, because a single
- * trusted ingress hop appends to a header the client controls — the leftmost
- * entry is whatever the attacker sent, so keying on it gives a fresh bucket per
- * guess.
+ * The caller's address as the ingress proxy saw it. Envoy sets
+ * x-envoy-external-address from its client-IP detection and, with
+ * use_remote_address, overwrites whatever the client sent, so it is stable
+ * across connections and not spoofable. That overwrite is a property of the
+ * deployed ingress, not of this code.
+ *
+ * Fallbacks: the rightmost X-Forwarded-For entry is the single trusted ingress
+ * hop's append — the leftmost entry is whatever the attacker sent, so keying on
+ * it gives a fresh bucket per guess — then x-real-ip, then "unknown".
  */
 export function clientIp(request: NextRequest): string {
+  const external = request.headers.get("x-envoy-external-address")?.trim();
+  if (external) return external;
+
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
     const last = forwarded.split(",").pop()?.trim();
