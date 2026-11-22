@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/dreadster3/hindsight-control-plane/compare/v0.2.0...v0.2.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **security:** 405 method gate, envoy login ip ([#25](https://github.com/dreadster3/hindsight-control-plane/issues/25)) ([d510d5e](https://github.com/dreadster3/hindsight-control-plane/commit/d510d5e38e0b95b0ee1e661fa71222ce6bf3a214))
+
 ## [0.2.0](https://github.com/dreadster3/hindsight-control-plane/compare/v0.1.2...v0.2.0) (2026-11-21)
 
 
